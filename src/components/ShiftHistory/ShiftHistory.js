@@ -338,7 +338,9 @@ const ShiftHistory = () => {
                           <small className="text-muted d-block">Status</small>
                           <span className={`badge badge-sm ${
                             shift.status === 'COMPLETED' ? 'bg-success' : 
-                            shift.status === 'DRAFT' ? 'bg-warning text-dark' : 'bg-secondary'
+                            shift.status === 'ACTIVE' ? 'bg-primary' :
+                            shift.status === 'ON BREAK' ? 'bg-warning text-dark' :
+                            shift.status === 'DRAFT' ? 'bg-secondary' : 'bg-light text-dark'
                           }`}>
                             {shift.status || 'Unknown'}
                           </span>
@@ -410,7 +412,9 @@ const ShiftHistory = () => {
                         <td>
                           <span className={`badge ${
                             shift.status === 'COMPLETED' ? 'bg-success' : 
-                            shift.status === 'DRAFT' ? 'bg-warning text-dark' : 'bg-secondary'
+                            shift.status === 'ACTIVE' ? 'bg-primary' :
+                            shift.status === 'ON BREAK' ? 'bg-warning text-dark' :
+                            shift.status === 'DRAFT' ? 'bg-secondary' : 'bg-light text-dark'
                           }`}>
                             {shift.status || 'Unknown'}
                           </span>

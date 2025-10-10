@@ -2368,45 +2368,81 @@ function getShifts(data, clientTimezone) {
     
     const shifts = filteredData.map(row => {
       // ========================================
-      // 🔥 SAME SMART STATUS LOGIC FOR SHIFT HISTORY
+      // 🔥 DATE-AWARE SMART STATUS LOGIC FOR SHIFT HISTORY
       // ========================================
       const segments = JSON.parse(row[9] || '[]');
-      const hasActiveSegment = segments.some(seg => !seg.endTime);
-      const lastEndTime = row[6];
+      const shiftDate = normalizeDate(row[3]);
       const storedStatus = row[10];
+      
+      // 🚨 DATE-AWARE STATUS VALIDATION (same as createCompleteShift)
+      const today = new Date();
+      const shiftDateObj = new Date(shiftDate);
+      const isShiftFromPast = shiftDateObj.toDateString() < today.toDateString();
+      const isShiftFromFuture = shiftDateObj.toDateString() > today.toDateString();
+      const isShiftToday = shiftDateObj.toDateString() === today.toDateString();
+      
+      Logger.log(`📅 getShifts Date Analysis: Shift=${shiftDate}, Today=${today.toDateString()}`);
+      Logger.log(`📅 isPast=${isShiftFromPast}, isFuture=${isShiftFromFuture}, isToday=${isShiftToday}`);
       
       let smartStatus;
       
-      // Apply the same intelligent status logic
-      if (storedStatus === 'COMPLETED' && segments.length > 0) {
-        const firstStartTime = segments[0]?.startTime;
-        if (firstStartTime && isCurrentTimeBeforeShiftStart(currentTime, firstStartTime)) {
-          smartStatus = 'OFFLINE';
-        } else {
+      if (isShiftFromPast) {
+        // For past dates, shifts can only be COMPLETED or DRAFT (never ACTIVE)
+        const hasActiveSegment = segments.some(seg => !seg.endTime);
+        if (hasActiveSegment) {
+          Logger.log('🚨 PAST DATE with active segment - forcing COMPLETED');
           smartStatus = 'COMPLETED';
+        } else if (segments.length > 0 && segments.every(seg => seg.endTime)) {
+          Logger.log('🎯 Past shift with complete segments - COMPLETED');
+          smartStatus = 'COMPLETED';
+        } else {
+          Logger.log('🎯 Past shift with incomplete data - DRAFT');
+          smartStatus = 'DRAFT';
         }
-      } else if (segments.length > 0 && !hasActiveSegment) {
-        const firstStartTime = segments[0]?.startTime;
-        if (firstStartTime && isCurrentTimeBeforeShiftStart(currentTime, firstStartTime)) {
-          smartStatus = 'OFFLINE';
-        } else if (lastEndTime && isCurrentTimeAfterShiftEnd(currentTime, lastEndTime)) {
-          smartStatus = 'COMPLETED';
-        } else if (checkForGapsBetweenSegments(segments, currentTime)) {
-          smartStatus = 'ON BREAK';
+      } else if (isShiftFromFuture) {
+        // For future dates, shifts can only be DRAFT or OFFLINE (never ACTIVE/COMPLETED)
+        Logger.log('🎯 Future shift - can only be DRAFT or OFFLINE');
+        smartStatus = 'DRAFT';
+      } else if (isShiftToday) {
+        // For today's shifts, use normal time-based logic
+        const hasActiveSegment = segments.some(seg => !seg.endTime);
+        const lastEndTime = row[6];
+        
+        if (storedStatus === 'COMPLETED' && segments.length > 0) {
+          const firstStartTime = segments[0]?.startTime;
+          if (firstStartTime && isCurrentTimeBeforeShiftStart(currentTime, firstStartTime)) {
+            smartStatus = 'OFFLINE';
+          } else {
+            smartStatus = 'COMPLETED';
+          }
+        } else if (segments.length > 0 && !hasActiveSegment) {
+          const firstStartTime = segments[0]?.startTime;
+          if (firstStartTime && isCurrentTimeBeforeShiftStart(currentTime, firstStartTime)) {
+            smartStatus = 'OFFLINE';
+          } else if (lastEndTime && isCurrentTimeAfterShiftEnd(currentTime, lastEndTime)) {
+            smartStatus = 'COMPLETED';
+          } else if (checkForGapsBetweenSegments(segments, currentTime)) {
+            smartStatus = 'ON BREAK';
+          } else {
+            smartStatus = 'ON BREAK';
+          }
+        } else if (hasActiveSegment) {
+          smartStatus = 'ACTIVE';
+        } else if (segments.length > 0) {
+          if (lastEndTime && isCurrentTimeAfterShiftEnd(currentTime, lastEndTime)) {
+            smartStatus = 'COMPLETED';
+          } else {
+            smartStatus = 'ON BREAK';
+          }
         } else {
-          smartStatus = 'ON BREAK';
-        }
-      } else if (hasActiveSegment) {
-        smartStatus = 'ACTIVE';
-      } else if (segments.length > 0) {
-        if (lastEndTime && isCurrentTimeAfterShiftEnd(currentTime, lastEndTime)) {
-          smartStatus = 'COMPLETED';
-        } else {
-          smartStatus = 'ON BREAK';
+          smartStatus = 'DRAFT';
         }
       } else {
+        // Fallback for edge cases
         smartStatus = 'DRAFT';
       }
+      
+      Logger.log(`🎯 Final smart status for ${shiftDate}: ${smartStatus}`);
       // ========================================
       
       return {
