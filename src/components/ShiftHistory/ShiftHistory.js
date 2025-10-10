@@ -113,6 +113,16 @@ const ShiftHistory = () => {
       return;
     }
 
+    // Special warning for completed shifts
+    if (editingShift.status === 'COMPLETED') {
+      const confirmEdit = window.confirm(
+        'This shift is marked as COMPLETED. Editing will mark it as updated. Do you want to continue?'
+      );
+      if (!confirmEdit) {
+        return;
+      }
+    }
+
     setSaving(true);
     try {
       const newDuration = calculateDuration(editFormData.firstStartTime, editFormData.lastEndTime);
@@ -136,11 +146,12 @@ const ShiftHistory = () => {
         lastEndTime: editFormData.lastEndTime,
         totalDuration: newDuration,
         isUpdate: true,
+        isEmployeeEdit: true, // Flag to indicate this is an employee edit
         scheduleStatus: 'active'
       });
 
       if (response.success) {
-        alert('Shift times updated successfully!');
+        alert('Shift times updated successfully! The shift has been marked as updated.');
         handleCancelEdit();
         loadShiftHistory(); // Reload to show updated data
       } else {
@@ -248,7 +259,7 @@ const ShiftHistory = () => {
               <h4 className="mb-0 fs-5 fs-md-4">Shift History</h4>
               <small className="text-muted">
                 <i className="bi bi-info-circle me-1"></i>
-                Click <i className="bi bi-pencil"></i> to edit times for non-completed shifts
+                Click <i className="bi bi-pencil"></i> to edit times for any shift (including completed ones)
               </small>
             </div>
             <button 
@@ -297,11 +308,18 @@ const ShiftHistory = () => {
                         <h6 className="card-title mb-0 text-primary">
                           {formatDate(shift.shiftDate || shift.date)}
                         </h6>
-                        <span className={`badge ${
-                          shift.shiftType === 'Overtime' ? 'bg-warning text-dark' : 'bg-primary'
-                        }`}>
-                          {shift.shiftType || 'Regular'}
-                        </span>
+                        <div className="d-flex flex-column gap-1 align-items-end">
+                          <span className={`badge ${
+                            shift.shiftType === 'Overtime' ? 'bg-warning text-dark' : 'bg-primary'
+                          }`}>
+                            {shift.shiftType || 'Regular'}
+                          </span>
+                          {(shift.updated === true || shift.updated === 'TRUE') && (
+                            <span className="badge bg-info text-dark" style={{fontSize: '0.7rem'}} title="This shift has been updated">
+                              <i className="bi bi-pencil-fill"></i> Updated
+                            </span>
+                          )}
+                        </div>
                       </div>
                       <div className="row g-2 text-sm">
                         <div className="col-6">
@@ -331,7 +349,7 @@ const ShiftHistory = () => {
                           <button 
                             className="btn btn-outline-primary btn-sm flex-fill"
                             onClick={() => handleEditShift(shift)}
-                            disabled={shift.status === 'COMPLETED'}
+                            title="Edit shift times"
                           >
                             <i className="bi bi-pencil me-1"></i>
                             Edit Times
@@ -371,11 +389,18 @@ const ShiftHistory = () => {
                       <tr key={shift.id || index}>
                         <td>{formatDate(shift.shiftDate || shift.date)}</td>
                         <td>
-                          <span className={`badge ${
-                            shift.shiftType === 'Overtime' ? 'bg-warning text-dark' : 'bg-primary'
-                          }`}>
-                            {shift.shiftType || 'Regular'}
-                          </span>
+                          <div className="d-flex flex-column gap-1">
+                            <span className={`badge ${
+                              shift.shiftType === 'Overtime' ? 'bg-warning text-dark' : 'bg-primary'
+                            }`}>
+                              {shift.shiftType || 'Regular'}
+                            </span>
+                            {(shift.updated === true || shift.updated === 'TRUE') && (
+                              <span className="badge bg-info text-dark" style={{fontSize: '0.7rem'}} title="This shift has been updated">
+                                <i className="bi bi-pencil-fill"></i> Updated
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td>{formatTime(shift.firstStartTime || shift.startTime)}</td>
                         <td>{formatTime(shift.lastEndTime || shift.endTime)}</td>
@@ -395,8 +420,7 @@ const ShiftHistory = () => {
                             <button 
                               className="btn btn-outline-primary btn-sm"
                               onClick={() => handleEditShift(shift)}
-                              disabled={shift.status === 'COMPLETED'}
-                              title={shift.status === 'COMPLETED' ? 'Cannot edit completed shifts' : 'Edit shift times'}
+                              title="Edit shift times"
                             >
                               <i className="bi bi-pencil"></i>
                             </button>
@@ -514,7 +538,13 @@ const ShiftHistory = () => {
                 <div className="mt-3">
                   <small className="text-muted">
                     <i className="bi bi-info-circle me-1"></i>
-                    Note: This will update the shift times and recalculate the total duration.
+                    Note: This will update the shift times, recalculate duration, and mark the shift as "Updated" in the system.
+                    {editingShift && editingShift.status === 'COMPLETED' && (
+                      <span className="text-warning d-block mt-1">
+                        <i className="bi bi-exclamation-triangle me-1"></i>
+                        <strong>Warning:</strong> This shift is completed. Editing will change its status.
+                      </span>
+                    )}
                   </small>
                 </div>
               </div>

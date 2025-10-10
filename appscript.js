@@ -2058,6 +2058,7 @@ function createCompleteShift(data, clientTimezone) {
     const isScheduleChange = data.isScheduleChange || false;
     const isFirstSave = data.isFirstSave || false;
     const isUpdate = data.isUpdate || false;
+    const isEmployeeEdit = data.isEmployeeEdit || false; // Flag for employee edits
     
     Logger.log(`Processing shift for ${employeeName} (${employeeId}) on ${shiftDate}`);
     
@@ -2122,7 +2123,9 @@ function createCompleteShift(data, clientTimezone) {
         
         // Preserve initial segment data
         const initialSegmentData = existingInitialData || (isFirstSave ? JSON.stringify(segments) : '');
-        const updatedFlag = existingUpdatedFlag || isUpdate;
+        const updatedFlag = existingUpdatedFlag || isUpdate || isEmployeeEdit; // Set to true for employee edits
+        
+        Logger.log(`🔄 Employee Edit Flag: ${isEmployeeEdit}, Updated Flag will be: ${updatedFlag}`);
         
         // 🔥 UPDATE WITH SMART STATUS AND CALCULATED VALUES
         sheet.getRange(existingRow, 5).setValue(data.shiftType || 'Regular');
@@ -2169,6 +2172,9 @@ function createCompleteShift(data, clientTimezone) {
         
         const shiftId = 'SH' + Date.now();
         const initialSegmentData = JSON.stringify(segments);
+        const updatedFlag = isEmployeeEdit; // Set to true if this is an employee edit
+        
+        Logger.log(`🆕 New Shift - Employee Edit Flag: ${isEmployeeEdit}, Updated Flag will be: ${updatedFlag}`);
         
         Logger.log(`🚨 CREATING NEW SHIFT - Status will be: ${smartStatus}`);
         const rowData = [
@@ -2186,10 +2192,11 @@ function createCompleteShift(data, clientTimezone) {
           new Date(),
           new Date(),
           initialSegmentData,
-          false
+          updatedFlag // Use the calculated updated flag
         ];
         Logger.log(`🚨 NEW SHIFT ROW DATA - Position 10 (Status): ${rowData[10]}`);
         Logger.log(`🚨 NEW SHIFT ROW DATA - firstStartTime: ${rowData[5]}, lastEndTime: ${rowData[6]}, totalDuration: ${rowData[7]}`);
+        Logger.log(`🚨 NEW SHIFT ROW DATA - Updated Flag: ${rowData[14]}`);
         
         const nextRow = sheet.getLastRow() + 1;
         sheet.getRange(nextRow, 1, 1, 15).setValues([rowData]);
