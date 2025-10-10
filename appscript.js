@@ -894,14 +894,9 @@ function authenticateUser(data) {
   try {
     const username = String(data.username).trim();
     const password = String(data.password).trim(); 
-    const timezone = data.timezone; // User's selected timezone
     
     if (!username || !password) { 
       return { success: false, message: 'Username and password are required.' }; 
-    }
-    
-    if (!timezone) {
-      return { success: false, message: 'Please select your timezone.' };
     }
     
     const spreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
@@ -916,33 +911,7 @@ function authenticateUser(data) {
       return { success: false, message: 'No staff data found in the system.' }; 
     }
     
-    // Get existing data and find the Time Zone column (should be at column P)
-    const headers = staffSheet.getRange(1, 1, 1, staffSheet.getLastColumn()).getValues()[0];
-    let timezoneColumnIndex = headers.indexOf('Time Zone');
-    
-    // If not found by name, check column P (position 16) specifically
-    if (timezoneColumnIndex === -1) {
-      if (headers.length >= 16 && (headers[15] === 'Time Zone' || headers[15] === '')) {
-        timezoneColumnIndex = 15; // Column P is index 15 (0-based)
-        Logger.log(`📍 Time Zone column detected at position P (index 15)`);
-        
-        // Set header if it's empty
-        if (headers[15] === '' || headers[15] !== 'Time Zone') {
-          staffSheet.getRange(1, 16).setValue('Time Zone');
-          Logger.log(`🏷️ Set Time Zone header at column P`);
-        }
-      } else {
-        Logger.log('⚠️ Time Zone column not found - will create at column P');
-        // Create the Time Zone column at P if it doesn't exist
-        staffSheet.getRange(1, 16).setValue('Time Zone');
-        timezoneColumnIndex = 15;
-        Logger.log(`✅ Created Time Zone column at position P (index 15)`);
-      }
-    }
-    
-    Logger.log(`📋 Time Zone column index: ${timezoneColumnIndex} (Column ${String.fromCharCode(65 + timezoneColumnIndex)})`);
-    
-    const allData = staffSheet.getRange(2, 1, lastRow - 1, Math.max(staffSheet.getLastColumn(), 16)).getValues();
+    const allData = staffSheet.getRange(2, 1, lastRow - 1, staffSheet.getLastColumn()).getValues();
     
     for (let i = 0; i < allData.length; i++) {
       const row = allData[i];
@@ -950,55 +919,19 @@ function authenticateUser(data) {
       const rowName = String(row[1]).trim();
       
       if (rowName.toLowerCase() === username.toLowerCase() && rowEmployeeId === password) {
-        // Store timezone with proper format and validation info in column F
-        if (timezoneColumnIndex !== -1) {
-          const now = new Date();
-          
-          // Create timezone info object with validation data
-          const timezoneInfo = {
-            timezone: timezone,
-            displayName: getTimezoneDisplayName(timezone),
-            offset: getTimezoneOffsetHours(timezone),
-            lastUpdated: now.toISOString(),
-            validatedAt: now.toISOString()
-          };
-          
-          // Store formatted timezone info in column F
-          const timezoneString = `${timezone} (${timezoneInfo.displayName})`;
-          const targetColumn = timezoneColumnIndex + 1; // Convert to 1-based for getRange
-          staffSheet.getRange(i + 2, targetColumn).setValue(timezoneString);
-          
-          Logger.log(`🌍 Stored timezone: ${timezoneString}`);
-          Logger.log(`📍 Column: ${String.fromCharCode(65 + timezoneColumnIndex)} (index ${timezoneColumnIndex})`);
-          Logger.log(`📋 Row: ${i + 2}, Column: ${targetColumn}`);
-          Logger.log(`📊 Timezone details: ${JSON.stringify(timezoneInfo)}`);
-        } else {
-          Logger.log('❌ Could not store timezone - column index not found');
-        }
-        
         const userData = { 
           id: rowEmployeeId, 
           name: rowName, 
           email: String(row[2] || '').trim(), 
           role: String(row[3] || 'staff').trim().toLowerCase(), 
-          department: String(row[4] || '').trim(),
-          timezone: timezone,
-          timezoneDisplay: getTimezoneDisplayName(timezone)
+          department: String(row[4] || '').trim()
         };
         
         Logger.log('Authentication successful for user: ' + username);
-        Logger.log('Timezone stored: ' + timezone);
         
         return { 
           success: true, 
-          data: userData,
-          serverInfo: {
-            serverTimezone: DEFAULT_TIMEZONE,
-            userTimezone: timezone,
-            currentServerTime: getCurrentTimeString(DEFAULT_TIMEZONE),
-            currentUserTime: getCurrentTimeString(timezone),
-            timezoneOffset: getTimezoneOffsetHours(timezone) - getTimezoneOffsetHours(DEFAULT_TIMEZONE)
-          }
+          data: userData
         };
       }
     }

@@ -1,6 +1,6 @@
 // Replace with your actual Google Apps Script Web App URL
 // Replace with your NEW Google Apps Script Web App URL after redeployment
-const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzCjfAWax5QnVtfi6zWtHXOr4H0WPqdI9uPd8aTIkwiPaXhmZf1I3zxMSfWv2RKptnOTQ/exec';
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbw76PF5b0AViREcYq8imGvAFBgmtKe3SBJq2f8pLlxcCrdiI713yFobqv9la58AuZZRxw/exec';
 
 
 
@@ -64,8 +64,7 @@ export const loginUser = async (credentials) => {
   return await makeAPICall({
     action: 'login',
     username: credentials.username, // This will be the employee's name
-    password: credentials.password, // This will be the employee's ID
-    timezone: credentials.timezone  // User's selected timezone
+    password: credentials.password  // This will be the employee's ID
   });
 };
 

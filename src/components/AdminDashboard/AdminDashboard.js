@@ -61,8 +61,7 @@ const AdminDashboard = () => {
     name: '',
     email: '',
     role: 'Staff',
-    department: '',
-    timezone: 'Asia/Kolkata (India Standard Time)'
+    department: ''
   });
 
   // Status Update System states
@@ -538,8 +537,7 @@ const AdminDashboard = () => {
           { key: 'name', label: 'Name' },
           { key: 'email', label: 'Email' },
           { key: 'role', label: 'Role' },
-          { key: 'department', label: 'Department' },
-          { key: 'timezone', label: 'Time Zone' }
+          { key: 'department', label: 'Department' }
         ]);
         
         downloadCSV(csvData, `staff-data-${getCurrentDateString()}.csv`);
@@ -651,8 +649,7 @@ const AdminDashboard = () => {
         { key: 'name', label: 'Name' },
         { key: 'email', label: 'Email' },
         { key: 'role', label: 'Role' },
-        { key: 'department', label: 'Department' },
-        { key: 'timezone', label: 'Time Zone' }
+        { key: 'department', label: 'Department' }
       ]);
       downloadCSV(staffCSV, `staff-complete-${dateStr}.csv`);
     }
@@ -2249,8 +2246,7 @@ const AdminDashboard = () => {
       name: '',
       email: '',
       role: 'Staff',
-      department: '',
-      timezone: 'Asia/Kolkata (India Standard Time)'
+      department: ''
     });
     setShowAddStaffModal(true);
   };
@@ -2989,7 +2985,6 @@ const AdminDashboard = () => {
                             <th>Email</th>
                             <th>Role</th>
                             <th>Department</th>
-                            <th>Time Zone</th>
                             <th>Actions</th>
                           </tr>
                         </thead>
@@ -3007,11 +3002,6 @@ const AdminDashboard = () => {
                                 </span>
                               </td>
                               <td>{staff.department}</td>
-                              <td>
-                                <small className="text-muted">
-                                  {staff.timezone || 'Asia/Kolkata (IST)'}
-                                </small>
-                              </td>
                               <td>
                                 <button 
                                   className="btn btn-sm btn-outline-primary me-1"
@@ -3403,19 +3393,6 @@ const AdminDashboard = () => {
                       placeholder="Enter department"
                     />
                   </div>
-                  <div className="mb-3">
-                    <label className="form-label">Time Zone</label>
-                    <select
-                      className="form-select"
-                      value={newStaffData.timezone}
-                      onChange={(e) => setNewStaffData({...newStaffData, timezone: e.target.value})}
-                    >
-                      <option value="Asia/Kolkata (India Standard Time)">Asia/Kolkata (India Standard Time)</option>
-                      <option value="America/New_York (Eastern Time)">America/New_York (Eastern Time)</option>
-                      <option value="Europe/London (GMT)">Europe/London (GMT)</option>
-                      <option value="Asia/Tokyo (Japan Time)">Asia/Tokyo (Japan Time)</option>
-                    </select>
-                  </div>
                 </form>
               </div>
               <div className="modal-footer">
@@ -3502,19 +3479,6 @@ const AdminDashboard = () => {
                       value={editingStaff.department}
                       onChange={(e) => setEditingStaff({...editingStaff, department: e.target.value})}
                     />
-                  </div>
-                  <div className="mb-3">
-                    <label className="form-label">Time Zone</label>
-                    <select
-                      className="form-select"
-                      value={editingStaff.timezone || 'Asia/Kolkata (India Standard Time)'}
-                      onChange={(e) => setEditingStaff({...editingStaff, timezone: e.target.value})}
-                    >
-                      <option value="Asia/Kolkata (India Standard Time)">Asia/Kolkata (India Standard Time)</option>
-                      <option value="America/New_York (Eastern Time)">America/New_York (Eastern Time)</option>
-                      <option value="Europe/London (GMT)">Europe/London (GMT)</option>
-                      <option value="Asia/Tokyo (Japan Time)">Asia/Tokyo (Japan Time)</option>
-                    </select>
                   </div>
                 </form>
               </div>
