@@ -58,7 +58,6 @@ const AdminDashboard = () => {
   const [lastAnalysis, setLastAnalysis] = useState(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [comprehensiveData, setComprehensiveData] = useState(null);
-  const [aiSuggestions, setAiSuggestions] = useState([]);
 
   // Experimental tab states
   const [experimentalData, setExperimentalData] = useState(null);
@@ -791,17 +790,6 @@ const AdminDashboard = () => {
       setMessage('❌ Enhanced AI analysis failed: ' + handleAPIError(error));
     } finally {
       setAiLoading(false);
-    }
-  };
-
-  const loadAISuggestions = async () => {
-    try {
-      const suggestionsResponse = await getAIAnalysisSuggestions();
-      if (suggestionsResponse.success) {
-        setAiSuggestions(suggestionsResponse.data || []);
-      }
-    } catch (error) {
-      console.error('Failed to load AI suggestions:', error);
     }
   };
 
@@ -3044,65 +3032,52 @@ const AdminDashboard = () => {
             <div className="col-12">
               <h2 className="h4 mb-3">🧪 AI & Experimental Features</h2>
               
-              {/* Enhanced AI Analysis */}
+              {/* Simple AI Prompt */}
               <div className="card mb-4">
                 <div className="card-header">
-                  <h5 className="card-title mb-0">🚀 Enhanced AI Analysis (Data-First)</h5>
+                  <h5 className="card-title mb-0">🤖 AI Analysis</h5>
                 </div>
                 <div className="card-body">
                   <p className="text-muted">
-                    <strong>Next-generation AI analysis</strong> that automatically fetches comprehensive sheet data before processing your prompts.
-                    All responses are displayed directly on the dashboard - no downloads required!
+                    Ask any question about your staff data and get real analysis.
                   </p>
                   
                   <div className="mb-3">
-                    <label className="form-label">Enter your AI prompt:</label>
+                    <label className="form-label">Enter your question:</label>
                     <textarea
                       className="form-control"
                       rows="3"
                       value={customPrompt}
                       onChange={(e) => setCustomPrompt(e.target.value)}
-                      placeholder="Examples:&#10;• Analyze all shift patterns across departments&#10;• What are the productivity trends?&#10;• Show me workload distribution insights&#10;• Predict optimal staffing levels"
+                      placeholder="Type your question here... (e.g., who is doing less work?)"
                     />
                   </div>
                   
-                  <div className="row g-2">
-                    <div className="col-12 col-md-6">
-                      <button 
-                        className="btn btn-primary w-100"
-                        onClick={handleEnhancedAIAnalysis}
-                        disabled={aiLoading || !customPrompt.trim()}
-                      >
-                        {aiLoading ? (
-                          <>
-                            <span className="spinner-border spinner-border-sm me-2" />
-                            Processing...
-                          </>
-                        ) : (
-                          <>
-                            <i className="bi bi-database me-2"></i>
-                            Enhanced AI Analysis
-                          </>
-                        )}
-                      </button>
-                    </div>
-                    <div className="col-12 col-md-6">
-                      <button 
-                        className="btn btn-outline-info w-100"
-                        onClick={loadAISuggestions}
-                        disabled={aiLoading}
-                      >
-                        <i className="bi bi-lightbulb me-2"></i>
-                        Get Smart Suggestions
-                      </button>
-                    </div>
+                  <div className="d-grid">
+                    <button 
+                      className="btn btn-primary"
+                      onClick={handleEnhancedAIAnalysis}
+                      disabled={aiLoading || !customPrompt.trim()}
+                    >
+                      {aiLoading ? (
+                        <>
+                          <span className="spinner-border spinner-border-sm me-2" />
+                          Processing...
+                        </>
+                      ) : (
+                        <>
+                          <i className="bi bi-send me-2"></i>
+                          Send
+                        </>
+                      )}
+                    </button>
                   </div>
                   
                   {/* AI Response Display */}
                   {aiResponse && (
                     <div className="mt-4">
                       <div className="alert alert-success">
-                        <h6 className="alert-heading">🤖 AI Analysis Response:</h6>
+                        <h6 className="alert-heading">🤖 AI Response:</h6>
                         <div className="mb-3" style={{ whiteSpace: 'pre-wrap' }}>{aiResponse}</div>
                         {lastAnalysis && (
                           <div className="border-top pt-2 mt-2">
@@ -3115,29 +3090,6 @@ const AdminDashboard = () => {
                             </small>
                           </div>
                         )}
-                      </div>
-                    </div>
-                  )}
-                  
-                  {/* AI Suggestions */}
-                  {aiSuggestions.length > 0 && (
-                    <div className="mt-3">
-                      <h6>💡 AI Suggestions:</h6>
-                      <div className="row g-2">
-                        {aiSuggestions.map((suggestion, index) => (
-                          <div key={index} className="col-12 col-md-6">
-                            <div className="card card-body small">
-                              <strong>{suggestion.title}</strong>
-                              <span className="text-muted">{suggestion.description}</span>
-                              <button 
-                                className="btn btn-sm btn-outline-primary mt-2"
-                                onClick={() => setCustomPrompt(suggestion.prompt)}
-                              >
-                                Use This Prompt
-                              </button>
-                            </div>
-                          </div>
-                        ))}
                       </div>
                     </div>
                   )}

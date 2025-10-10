@@ -8732,12 +8732,98 @@ function processAIPromptWithData(data) {
 }
 
 /**
- * Real AI response generator that analyzes actual data
+ * Real AI response generator that analyzes actual data - NO CANNED RESPONSES
  */
 function generateRealAIResponse(prompt, data) {
   const startTime = Date.now();
   
-  // Analyze the prompt to determine what analysis to perform
+  // NO CANNED RESPONSES - ONLY REAL DATA ANALYSIS
+  Logger.log(`🤖 AI analyzing prompt: "${prompt}"`);
+  Logger.log(`📊 Data available: ${data.shiftsCount} shifts, ${data.staffCount} staff`);
+  
+  const promptLower = prompt.toLowerCase();
+  let response = `🤖 AI Analysis Results:\n\n`;
+  
+  // Get employee performance analysis for ANY query
+  const employeeAnalysis = analyzeEmployeePerformance(data);
+  const employees = employeeAnalysis.allEmployees;
+  
+  Logger.log(`👥 Analyzed ${employees.length} employees`);
+  
+  if (employees.length === 0) {
+    response += `❌ No employee data found to analyze.\n`;
+    response += `📊 Available data: ${data.shiftsCount} shifts, ${data.staffCount} staff records\n`;
+    return {
+      response: response,
+      recommendations: [],
+      confidence: 0,
+      processingTime: Date.now() - startTime
+    };
+  }
+  
+  // Sort employees by total hours for analysis
+  const workloadRanking = [...employees].sort((a, b) => a.totalHours - b.totalHours);
+  const performanceRanking = [...employees].sort((a, b) => b.score - a.score);
+  
+  // Check what user is asking about
+  if (promptLower.includes('hardwork') || promptLower.includes('hard work') || promptLower.includes('most work') || promptLower.includes('best') || promptLower.includes('top')) {
+    // Show hardest working employee
+    const hardestWorker = workloadRanking[workloadRanking.length - 1];
+    response += `🏆 HARDEST WORKING EMPLOYEE:\n`;
+    response += `• Name: ${hardestWorker.name}\n`;
+    response += `• Total Hours: ${hardestWorker.totalHours.toFixed(1)} hours\n`;
+    response += `• Number of Shifts: ${hardestWorker.totalShifts}\n`;
+    response += `• Average Shift Duration: ${hardestWorker.avgDuration.toFixed(1)} hours\n`;
+    response += `• Performance Score: ${hardestWorker.score}/100\n`;
+    response += `• Completion Rate: ${hardestWorker.completionRate.toFixed(1)}%\n\n`;
+    
+  } else if (promptLower.includes('less work') || promptLower.includes('least work') || promptLower.includes('worst') || promptLower.includes('lowest')) {
+    // Show least working employee  
+    const leastWorker = workloadRanking[0];
+    response += `📉 EMPLOYEE DOING LEAST WORK:\n`;
+    response += `• Name: ${leastWorker.name}\n`;
+    response += `• Total Hours: ${leastWorker.totalHours.toFixed(1)} hours\n`;
+    response += `• Number of Shifts: ${leastWorker.totalShifts}\n`;
+    response += `• Average Shift Duration: ${leastWorker.avgDuration.toFixed(1)} hours\n`;
+    response += `• Performance Score: ${leastWorker.score}/100\n`;
+    response += `• Completion Rate: ${leastWorker.completionRate.toFixed(1)}%\n\n`;
+    
+  } else {
+    // For any other question, show all employee data
+    response += `📊 COMPLETE EMPLOYEE ANALYSIS:\n\n`;
+    workloadRanking.forEach((emp, index) => {
+      const position = workloadRanking.length - index;
+      response += `${position}. ${emp.name}:\n`;
+      response += `   • Hours: ${emp.totalHours.toFixed(1)}h\n`;
+      response += `   • Shifts: ${emp.totalShifts}\n`;
+      response += `   • Score: ${emp.score}/100\n`;
+      response += `   • Completion: ${emp.completionRate.toFixed(1)}%\n\n`;
+    });
+  }
+  
+  // Always show ranking for context
+  response += `📈 WORKLOAD RANKING (Most to Least Hours):\n`;
+  workloadRanking.reverse().forEach((emp, index) => {
+    response += `${index + 1}. ${emp.name}: ${emp.totalHours.toFixed(1)}h (${emp.totalShifts} shifts)\n`;
+  });
+  response += '\n';
+  
+  // Data summary
+  response += `📋 RAW DATA SUMMARY:\n`;
+  response += `• Total Shifts in Database: ${data.shiftsCount}\n`;
+  response += `• Total Staff Records: ${data.staffCount}\n`;
+  response += `• Total Hours Tracked: ${employees.reduce((sum, emp) => sum + emp.totalHours, 0).toFixed(1)}\n`;
+  response += `• Date Range: ${data.statistics?.dateRange?.earliest || 'N/A'} to ${data.statistics?.dateRange?.latest || 'N/A'}\n`;
+  
+  const processingTime = Date.now() - startTime;
+  
+  return {
+    response: response,
+    recommendations: [`Based on the analysis above`],
+    confidence: 100, // 100% confidence since it's real data
+    processingTime: processingTime
+  };
+}
   const promptLower = prompt.toLowerCase();
   let response = "🤖 AI Analysis - Real Data Analysis:\n\n";
   
@@ -8745,6 +8831,8 @@ function generateRealAIResponse(prompt, data) {
   if (promptLower.includes('less work') || promptLower.includes('least work') || promptLower.includes('lowest performer') || promptLower.includes('worst employee') || promptLower.includes('underperformer') || promptLower.includes('who is doing less')) {
     const employeeAnalysis = analyzeEmployeePerformance(data);
     const employees = employeeAnalysis.allEmployees;
+
+
     
     if (employees.length > 0) {
       // Sort by total hours (ascending) to find who's doing less work
@@ -8889,10 +8977,6 @@ function generateRealAIResponse(prompt, data) {
   
   return {
     response: response,
-    recommendations: recommendations,
-    confidence: 98, // Higher confidence since we're using real data
-    processingTime: processingTime
-  };
 }
 
 /**
