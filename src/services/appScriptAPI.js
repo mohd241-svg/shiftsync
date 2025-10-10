@@ -390,12 +390,43 @@ export const updateShiftStatus = async (payload) => {
 // Submit time segments for a shift (uses createCompleteShift backend action)
 export const submitTimeSegments = async (payload) => {
   console.log('⏰ submitTimeSegments called with:', payload);
+  
+  // Calculate firstStartTime, lastEndTime, and totalDuration from segments
+  const segments = payload.segments || [];
+  let firstStartTime = '';
+  let lastEndTime = '';
+  let totalDuration = 0;
+  
+  if (segments.length > 0) {
+    // Sort segments by start time to ensure correct order
+    const sortedSegments = [...segments].sort((a, b) => {
+      const timeA = a.startTime.split(':').map(Number);
+      const timeB = b.startTime.split(':').map(Number);
+      return (timeA[0] * 60 + timeA[1]) - (timeB[0] * 60 + timeB[1]);
+    });
+    
+    // Get first start time and last end time
+    firstStartTime = sortedSegments[0].startTime;
+    lastEndTime = sortedSegments[sortedSegments.length - 1].endTime;
+    
+    // Calculate total duration
+    totalDuration = segments.reduce((total, segment) => {
+      return total + (segment.duration || 0);
+    }, 0);
+    
+    console.log(`📊 Calculated: firstStartTime=${firstStartTime}, lastEndTime=${lastEndTime}, totalDuration=${totalDuration}`);
+  }
+  
   return await makeAPICall({
     action: 'createCompleteShift',
     employeeName: payload.employeeName,
     employeeId: payload.employeeId,
     shiftDate: payload.date,
-    segments: payload.segments,
+    shiftType: payload.shiftType || 'Regular',
+    segments: segments,
+    firstStartTime: firstStartTime,
+    lastEndTime: lastEndTime,
+    totalDuration: totalDuration,
     scheduleStatus: 'active', // Set appropriate status
     isUpdate: false,
     isFirstSave: true

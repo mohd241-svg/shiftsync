@@ -2006,7 +2006,54 @@ function createCompleteShift(data, clientTimezone) {
     const employeeName = String(data.employeeName).trim();
     const shiftDate = normalizeDate(data.shiftDate);
     const segments = data.segments || [];
-    const totalDuration = data.totalDuration || 0;
+    
+    // 🔥 CALCULATE firstStartTime, lastEndTime, and totalDuration if not provided
+    let firstStartTime = data.firstStartTime || '';
+    let lastEndTime = data.lastEndTime || '';
+    let totalDuration = data.totalDuration || 0;
+    
+    if (segments.length > 0) {
+      // Calculate from segments if not provided or if provided values are empty
+      if (!firstStartTime || !lastEndTime || totalDuration === 0) {
+        Logger.log('🧮 Calculating missing values from segments...');
+        
+        // Sort segments by start time
+        const sortedSegments = [...segments].sort((a, b) => {
+          const timeA = a.startTime.split(':').map(Number);
+          const timeB = b.startTime.split(':').map(Number);
+          return (timeA[0] * 60 + timeA[1]) - (timeB[0] * 60 + timeB[1]);
+        });
+        
+        // Calculate first start time
+        if (!firstStartTime) {
+          firstStartTime = sortedSegments[0].startTime;
+          Logger.log(`📊 Calculated firstStartTime: ${firstStartTime}`);
+        }
+        
+        // Calculate last end time (from the segment with the latest end time)
+        if (!lastEndTime) {
+          const segmentsWithEndTime = segments.filter(seg => seg.endTime);
+          if (segmentsWithEndTime.length > 0) {
+            const sortedByEndTime = segmentsWithEndTime.sort((a, b) => {
+              const timeA = a.endTime.split(':').map(Number);
+              const timeB = b.endTime.split(':').map(Number);
+              return (timeB[0] * 60 + timeB[1]) - (timeA[0] * 60 + timeA[1]);
+            });
+            lastEndTime = sortedByEndTime[0].endTime;
+            Logger.log(`📊 Calculated lastEndTime: ${lastEndTime}`);
+          }
+        }
+        
+        // Calculate total duration
+        if (totalDuration === 0) {
+          totalDuration = segments.reduce((total, segment) => {
+            return total + (segment.duration || 0);
+          }, 0);
+          Logger.log(`📊 Calculated totalDuration: ${totalDuration}`);
+        }
+      }
+    }
+    
     const scheduleStatus = data.scheduleStatus || 'draft';
     const isScheduleChange = data.isScheduleChange || false;
     const isFirstSave = data.isFirstSave || false;
@@ -2033,21 +2080,21 @@ function createCompleteShift(data, clientTimezone) {
       const [currentHour, currentMin] = currentTime.split(':').map(Number);
       const currentMinutes = currentHour * 60 + currentMin;
       
-      if (data.lastEndTime) {
-        const [endHour, endMin] = data.lastEndTime.split(':').map(Number);
+      if (lastEndTime) {
+        const [endHour, endMin] = lastEndTime.split(':').map(Number);
         const endMinutes = endHour * 60 + endMin;
         
-        Logger.log(`🚨 FRONTEND ISSUE CHECK: Current ${currentTime} (${currentMinutes} min) vs End ${data.lastEndTime} (${endMinutes} min)`);
+        Logger.log(`🚨 FRONTEND ISSUE CHECK: Current ${currentTime} (${currentMinutes} min) vs End ${lastEndTime} (${endMinutes} min)`);
         
         if (currentMinutes < endMinutes) {
           // Current time is before shift end - this should be ACTIVE, not COMPLETED
           Logger.log('🚨 FRONTEND ISSUE DETECTED: Shift has endTime in future but current time is before it - forcing ACTIVE');
           smartStatus = 'ACTIVE';
         } else {
-          smartStatus = calculateSmartShiftStatus(segments, data.firstStartTime, data.lastEndTime);
+          smartStatus = calculateSmartShiftStatus(segments, firstStartTime, lastEndTime);
         }
       } else {
-        smartStatus = calculateSmartShiftStatus(segments, data.firstStartTime, data.lastEndTime);
+        smartStatus = calculateSmartShiftStatus(segments, firstStartTime, lastEndTime);
       }
       Logger.log(`🎯 Smart status calculated: ${smartStatus}`);
     }
@@ -2077,10 +2124,10 @@ function createCompleteShift(data, clientTimezone) {
         const initialSegmentData = existingInitialData || (isFirstSave ? JSON.stringify(segments) : '');
         const updatedFlag = existingUpdatedFlag || isUpdate;
         
-        // 🔥 UPDATE WITH SMART STATUS
+        // 🔥 UPDATE WITH SMART STATUS AND CALCULATED VALUES
         sheet.getRange(existingRow, 5).setValue(data.shiftType || 'Regular');
-        sheet.getRange(existingRow, 6).setValue(data.firstStartTime);
-        sheet.getRange(existingRow, 7).setValue(data.lastEndTime);
+        sheet.getRange(existingRow, 6).setValue(firstStartTime);
+        sheet.getRange(existingRow, 7).setValue(lastEndTime);
         sheet.getRange(existingRow, 8).setValue(totalDuration);
         sheet.getRange(existingRow, 9).setValue(segments.length);
         sheet.getRange(existingRow, 10).setValue(JSON.stringify(segments));
@@ -2107,6 +2154,8 @@ function createCompleteShift(data, clientTimezone) {
             employeeId: employeeId,
             shiftDate: shiftDate,
             shiftType: data.shiftType || 'Regular',
+            firstStartTime: firstStartTime,
+            lastEndTime: lastEndTime,
             segments: segments,
             totalDuration: totalDuration,
             status: smartStatus, // 🔥 RETURN SMART STATUS
@@ -2128,8 +2177,8 @@ function createCompleteShift(data, clientTimezone) {
           employeeId,
           shiftDate,
           data.shiftType || 'Regular',
-          data.firstStartTime,
-          data.lastEndTime,
+          firstStartTime,
+          lastEndTime,
           totalDuration,
           segments.length,
           JSON.stringify(segments),
@@ -2140,6 +2189,7 @@ function createCompleteShift(data, clientTimezone) {
           false
         ];
         Logger.log(`🚨 NEW SHIFT ROW DATA - Position 10 (Status): ${rowData[10]}`);
+        Logger.log(`🚨 NEW SHIFT ROW DATA - firstStartTime: ${rowData[5]}, lastEndTime: ${rowData[6]}, totalDuration: ${rowData[7]}`);
         
         const nextRow = sheet.getLastRow() + 1;
         sheet.getRange(nextRow, 1, 1, 15).setValues([rowData]);
@@ -2156,6 +2206,8 @@ function createCompleteShift(data, clientTimezone) {
             employeeId: employeeId,
             shiftDate: shiftDate,
             shiftType: data.shiftType || 'Regular',
+            firstStartTime: firstStartTime,
+            lastEndTime: lastEndTime,
             segments: segments,
             totalDuration: totalDuration,
             status: smartStatus, // 🔥 RETURN SMART STATUS
