@@ -1,6 +1,6 @@
 // Replace with your actual Google Apps Script Web App URL
 // Replace with your NEW Google Apps Script Web App URL after redeployment
-const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbw76PF5b0AViREcYq8imGvAFBgmtKe3SBJq2f8pLlxcCrdiI713yFobqv9la58AuZZRxw/exec';
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyhOWIaNjCC-3SNDlDxXxW-P9DZXwbeP491VNCsXZdBT-m1eWYnPDTFrVBZkCoplHtg/exec';
 
 
 
@@ -1302,5 +1302,55 @@ export const deleteStaff = async (staffId) => {
   return await makeAPICall({
     action: 'deleteStaff',
     staffId: staffId
+  });
+};
+
+// =============================================================
+//                   ENHANCED AI SYSTEM
+// =============================================================
+
+// Get comprehensive sheet data for AI analysis
+export const getComprehensiveSheetData = async () => {
+  console.log('🤖 Fetching comprehensive sheet data for AI analysis');
+  return await makeAPICall({
+    action: 'getComprehensiveSheetData'
+  });
+};
+
+// Process AI prompt with automatic data fetching
+export const processAIPromptWithData = async (prompt, includeRawData = true) => {
+  console.log('🤖 Processing AI prompt with automatic data fetching:', prompt);
+  return await makeAPICall({
+    action: 'processAIPromptWithData',
+    prompt: prompt,
+    includeRawData: includeRawData,
+    requestTimestamp: new Date().toISOString()
+  });
+};
+
+// Experimental AI features
+export const runExperimentalAI = async (experimentType, parameters = {}) => {
+  console.log('🧪 Running experimental AI:', experimentType, parameters);
+  return await makeAPICall({
+    action: 'runExperimentalAI',
+    experimentType: experimentType,
+    parameters: parameters,
+    requestTimestamp: new Date().toISOString()
+  });
+};
+
+// Get AI analysis suggestions
+export const getAIAnalysisSuggestions = async () => {
+  console.log('💡 Getting AI analysis suggestions');
+  return await makeAPICall({
+    action: 'getAIAnalysisSuggestions'
+  });
+};
+
+// Get AI insights dashboard
+export const getAIInsightsDashboard = async () => {
+  console.log('📊 Getting AI insights dashboard');
+  return await makeAPICall({
+    action: 'getAIInsightsDashboard'
   });
 };

@@ -7,7 +7,12 @@ import {
   handleAPIError,
   debugSheetStructure,
   autoStatusUpdateOnLoad,
-  manualStatusUpdate
+  manualStatusUpdate,
+  getComprehensiveSheetData,
+  processAIPromptWithData,
+  runExperimentalAI,
+  getAIAnalysisSuggestions,
+  getAIInsightsDashboard
 } from '../../services/appScriptAPI';
 
 const AdminDashboard = () => {
@@ -52,6 +57,16 @@ const AdminDashboard = () => {
   const [showCustomPromptModal, setShowCustomPromptModal] = useState(false);
   const [aiResponse, setAiResponse] = useState('');
   const [lastAnalysis, setLastAnalysis] = useState(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [comprehensiveData, setComprehensiveData] = useState(null);
+  const [aiSuggestions, setAiSuggestions] = useState([]);
+
+  // Experimental tab states
+  const [experimentalData, setExperimentalData] = useState(null);
+  const [experimentalLoading, setExperimentalLoading] = useState(false);
+  const [selectedExperiment, setSelectedExperiment] = useState('data-insights');
+  const [experimentResults, setExperimentResults] = useState([]);
+  const [aiInsights, setAiInsights] = useState(null);
 
   // Staff Management states
   const [editingStaff, setEditingStaff] = useState(null);
@@ -1033,6 +1048,100 @@ const AdminDashboard = () => {
 
     downloadCSV(reportCSV, `custom-ai-analysis-${getCurrentDateString()}.csv`);
     setMessage('AI analysis report downloaded successfully!');
+  };
+
+  // Enhanced AI Functions with Data-First Approach
+  const handleEnhancedAIAnalysis = async () => {
+    try {
+      setAiLoading(true);
+      setMessage('🤖 Fetching comprehensive data for AI analysis...');
+      
+      // Step 1: Get comprehensive sheet data first
+      const dataResponse = await getComprehensiveSheetData();
+      
+      if (dataResponse.success) {
+        setComprehensiveData(dataResponse.data);
+        setMessage('✅ Data loaded! Processing with AI...');
+        
+        // Step 2: Process with AI using the comprehensive data
+        const analysisResponse = await processAIPromptWithData(customPrompt, true);
+        
+        if (analysisResponse.success) {
+          setAiResponse(analysisResponse.data.analysis);
+          setLastAnalysis({
+            prompt: customPrompt,
+            response: analysisResponse.data.analysis,
+            recommendations: analysisResponse.data.recommendations || [],
+            confidence: analysisResponse.data.confidence || 95,
+            processingTime: analysisResponse.data.processingTime || 0,
+            dataSource: `${dataResponse.data.shiftsCount || 0} shifts, ${dataResponse.data.staffCount || 0} staff`,
+            timestamp: new Date().toISOString(),
+            dataSnapshot: dataResponse.data
+          });
+          
+          setMessage('🎉 Enhanced AI analysis completed! Response displayed below.');
+        } else {
+          setMessage('❌ AI processing failed: ' + analysisResponse.message);
+        }
+      } else {
+        setMessage('❌ Failed to fetch comprehensive data: ' + dataResponse.message);
+      }
+    } catch (error) {
+      setMessage('❌ Enhanced AI analysis failed: ' + handleAPIError(error));
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
+  const loadAISuggestions = async () => {
+    try {
+      const suggestionsResponse = await getAIAnalysisSuggestions();
+      if (suggestionsResponse.success) {
+        setAiSuggestions(suggestionsResponse.data || []);
+      }
+    } catch (error) {
+      console.error('Failed to load AI suggestions:', error);
+    }
+  };
+
+  const handleExperimentalAI = async (experimentType) => {
+    try {
+      setExperimentalLoading(true);
+      setMessage(`🧪 Running experimental AI: ${experimentType}...`);
+      
+      const response = await runExperimentalAI(experimentType, {
+        includeTimeAnalysis: true,
+        includePatternDetection: true,
+        includePredictions: true
+      });
+      
+      if (response.success) {
+        setExperimentResults(prev => [...prev, {
+          id: Date.now(),
+          type: experimentType,
+          result: response.data,
+          timestamp: new Date().toISOString()
+        }]);
+        setMessage(`✅ Experimental AI completed: ${experimentType}`);
+      } else {
+        setMessage(`❌ Experimental AI failed: ${response.message}`);
+      }
+    } catch (error) {
+      setMessage(`❌ Experimental AI error: ${handleAPIError(error)}`);
+    } finally {
+      setExperimentalLoading(false);
+    }
+  };
+
+  const loadAIInsightsDashboard = async () => {
+    try {
+      const insightsResponse = await getAIInsightsDashboard();
+      if (insightsResponse.success) {
+        setAiInsights(insightsResponse.data);
+      }
+    } catch (error) {
+      console.error('Failed to load AI insights:', error);
+    }
   };
 
   const processCustomPrompt = async (prompt, staff, shifts, systemStats) => {
@@ -2390,6 +2499,12 @@ const AdminDashboard = () => {
               Staff
             </button>
             <button 
+              className={`btn btn-sm me-2 ${activeTab === 'experimental' ? 'btn-light' : 'btn-outline-light'}`}
+              onClick={() => setActiveTab('experimental')}
+            >
+              🧪 Experimental
+            </button>
+            <button 
               className={`btn btn-sm me-2 ${activeTab === 'system' ? 'btn-light' : 'btn-outline-light'}`}
               onClick={() => setActiveTab('system')}
             >
@@ -3325,6 +3440,222 @@ const AdminDashboard = () => {
             </div>
           </div>
         )}
+
+        {/* Experimental Tab */}
+        {activeTab === 'experimental' && (
+          <div className="row">
+            <div className="col-12">
+              <h2 className="h4 mb-3">🧪 Experimental AI Features</h2>
+              
+              {/* Enhanced AI Analysis */}
+              <div className="card mb-4">
+                <div className="card-header">
+                  <h5 className="card-title mb-0">🤖 Enhanced AI Analysis</h5>
+                </div>
+                <div className="card-body">
+                  <p className="text-muted">
+                    Advanced AI analysis that automatically fetches comprehensive sheet data before processing your prompts.
+                    All responses are displayed directly on the dashboard.
+                  </p>
+                  
+                  <div className="mb-3">
+                    <label className="form-label">Enter your AI prompt:</label>
+                    <textarea
+                      className="form-control"
+                      rows="3"
+                      value={customPrompt}
+                      onChange={(e) => setCustomPrompt(e.target.value)}
+                      placeholder="Examples:&#10;• Analyze all shift patterns across departments&#10;• What are the productivity trends?&#10;• Show me workload distribution insights&#10;• Predict optimal staffing levels"
+                    />
+                  </div>
+                  
+                  <div className="row g-2">
+                    <div className="col-12 col-md-6">
+                      <button 
+                        className="btn btn-primary w-100"
+                        onClick={handleEnhancedAIAnalysis}
+                        disabled={aiLoading || !customPrompt.trim()}
+                      >
+                        {aiLoading ? (
+                          <>
+                            <span className="spinner-border spinner-border-sm me-2" />
+                            Processing...
+                          </>
+                        ) : (
+                          <>
+                            <i className="bi bi-database me-2"></i>
+                            Analyze with Data
+                          </>
+                        )}
+                      </button>
+                    </div>
+                    <div className="col-12 col-md-6">
+                      <button 
+                        className="btn btn-outline-info w-100"
+                        onClick={loadAISuggestions}
+                        disabled={aiLoading}
+                      >
+                        <i className="bi bi-lightbulb me-2"></i>
+                        Get Suggestions
+                      </button>
+                    </div>
+                  </div>
+                  
+                  {/* AI Response Display */}
+                  {aiResponse && (
+                    <div className="mt-4">
+                      <div className="alert alert-success">
+                        <h6 className="alert-heading">🤖 AI Analysis Response:</h6>
+                        <div className="mb-3" style={{ whiteSpace: 'pre-wrap' }}>{aiResponse}</div>
+                        {lastAnalysis && (
+                          <div className="border-top pt-2 mt-2">
+                            <small className="text-muted">
+                              <strong>📊 Analysis Details:</strong><br/>
+                              • Data Sources: {lastAnalysis.dataSource}<br/>
+                              • Confidence: {lastAnalysis.confidence}%<br/>
+                              • Processing Time: {lastAnalysis.processingTime}ms<br/>
+                              • Timestamp: {new Date(lastAnalysis.timestamp).toLocaleString()}
+                            </small>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* AI Suggestions */}
+                  {aiSuggestions.length > 0 && (
+                    <div className="mt-3">
+                      <h6>💡 AI Suggestions:</h6>
+                      <div className="row g-2">
+                        {aiSuggestions.map((suggestion, index) => (
+                          <div key={index} className="col-12 col-md-6">
+                            <div className="card card-body small">
+                              <strong>{suggestion.title}</strong>
+                              <span className="text-muted">{suggestion.description}</span>
+                              <button 
+                                className="btn btn-sm btn-outline-primary mt-2"
+                                onClick={() => setCustomPrompt(suggestion.prompt)}
+                              >
+                                Use This Prompt
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Experimental AI Features */}
+              <div className="card mb-4">
+                <div className="card-header">
+                  <h5 className="card-title mb-0">🔬 Experimental Features</h5>
+                </div>
+                <div className="card-body">
+                  <p className="text-muted">
+                    Cutting-edge AI experiments for advanced workforce analytics and insights.
+                  </p>
+                  
+                  <div className="mb-3">
+                    <label className="form-label">Select Experiment:</label>
+                    <select 
+                      className="form-select"
+                      value={selectedExperiment}
+                      onChange={(e) => setSelectedExperiment(e.target.value)}
+                    >
+                      <option value="data-insights">📊 Deep Data Insights</option>
+                      <option value="pattern-prediction">🔮 Pattern Prediction</option>
+                      <option value="optimization-engine">⚡ Optimization Engine</option>
+                      <option value="anomaly-analysis">🚨 Advanced Anomaly Analysis</option>
+                      <option value="workforce-modeling">👥 Workforce Modeling</option>
+                    </select>
+                  </div>
+                  
+                  <button 
+                    className="btn btn-warning"
+                    onClick={() => handleExperimentalAI(selectedExperiment)}
+                    disabled={experimentalLoading}
+                  >
+                    {experimentalLoading ? (
+                      <>
+                        <span className="spinner-border spinner-border-sm me-2" />
+                        Running Experiment...
+                      </>
+                    ) : (
+                      <>
+                        <i className="bi bi-play-circle me-2"></i>
+                        Run Experiment
+                      </>
+                    )}
+                  </button>
+                  
+                  {/* Experiment Results */}
+                  {experimentResults.length > 0 && (
+                    <div className="mt-4">
+                      <h6>🧪 Experiment Results:</h6>
+                      {experimentResults.map((result) => (
+                        <div key={result.id} className="card mb-2">
+                          <div className="card-body">
+                            <h6 className="card-title">{result.type}</h6>
+                            <p className="card-text small">{JSON.stringify(result.result, null, 2)}</p>
+                            <small className="text-muted">
+                              {new Date(result.timestamp).toLocaleString()}
+                            </small>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* AI Insights Dashboard */}
+              <div className="card">
+                <div className="card-header">
+                  <h5 className="card-title mb-0">📈 AI Insights Dashboard</h5>
+                </div>
+                <div className="card-body">
+                  <button 
+                    className="btn btn-info mb-3"
+                    onClick={loadAIInsightsDashboard}
+                    disabled={loading}
+                  >
+                    <i className="bi bi-graph-up me-2"></i>
+                    Load AI Insights
+                  </button>
+                  
+                  {aiInsights && (
+                    <div className="row g-3">
+                      <div className="col-12 col-md-6">
+                        <div className="card card-body text-center">
+                          <h6 className="text-primary">Productivity Score</h6>
+                          <h4>{aiInsights.productivityScore || 0}%</h4>
+                        </div>
+                      </div>
+                      <div className="col-12 col-md-6">
+                        <div className="card card-body text-center">
+                          <h6 className="text-success">Efficiency Rating</h6>
+                          <h4>{aiInsights.efficiencyRating || 0}/10</h4>
+                        </div>
+                      </div>
+                      <div className="col-12">
+                        <div className="card card-body">
+                          <h6>🔍 Key Insights:</h6>
+                          <ul className="mb-0">
+                            {(aiInsights.insights || []).map((insight, index) => (
+                              <li key={index}>{insight}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Add Staff Modal */}
@@ -3580,18 +3911,18 @@ const AdminDashboard = () => {
                 <button 
                   type="button" 
                   className="btn btn-primary"
-                  onClick={handleProcessCustomPrompt}
-                  disabled={loading || !customPrompt.trim()}
+                  onClick={handleEnhancedAIAnalysis}
+                  disabled={aiLoading || !customPrompt.trim()}
                 >
-                  {loading ? (
+                  {aiLoading ? (
                     <>
                       <span className="spinner-border spinner-border-sm me-2" />
-                      Processing...
+                      Processing with Data...
                     </>
                   ) : (
                     <>
-                      <i className="bi bi-magic me-2"></i>
-                      Analyze with AI
+                      <i className="bi bi-database me-2"></i>
+                      Enhanced AI Analysis
                     </>
                   )}
                 </button>
