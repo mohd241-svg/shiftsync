@@ -2,6 +2,12 @@
 // Replace with your NEW Google Apps Script Web App URL after redeployment
 const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycby1z1P_tMx2EwOpRfWEyoTaqt_vJGWIxpmK2RsLGOSLTn6RAA6gNeFMkb2EE01Q1HwgkA/exec';
 
+// 🚨 CRITICAL: This URL must point to the LATEST deployment with real AI analysis!
+// If you're getting generic responses, you need to:
+// 1. Deploy the updated appscript.js to Google Apps Script
+// 2. Get the new deployment URL
+// 3. Replace the URL above with the new one
+
 
 
 
@@ -1320,12 +1326,33 @@ export const getComprehensiveSheetData = async () => {
 // Process AI prompt with automatic data fetching
 export const processAIPromptWithData = async (prompt, includeRawData = true) => {
   console.log('🤖 Processing AI prompt with automatic data fetching:', prompt);
-  return await makeAPICall({
+  console.log('🔗 Using Apps Script URL:', APPS_SCRIPT_URL);
+  
+  const response = await makeAPICall({
     action: 'processAIPromptWithData',
     prompt: prompt,
     includeRawData: includeRawData,
     requestTimestamp: new Date().toISOString()
   });
+  
+  // 🚨 DEBUGGING: Check if we're getting real AI analysis
+  if (response.success && response.data && response.data.analysis) {
+    const analysis = response.data.analysis;
+    console.log('📋 AI Response Preview:', analysis.substring(0, 200) + '...');
+    
+    // Check for signs of generic/canned responses
+    if (analysis.includes('Data Quality Score: 100/100') || 
+        analysis.includes('System Utilization: 4.486111111111112%') ||
+        analysis.includes('Consider expanding staff team')) {
+      console.warn('🚨 WARNING: You are getting GENERIC/CANNED responses!');
+      console.warn('🔧 SOLUTION: Deploy updated appscript.js and update APPS_SCRIPT_URL');
+      console.warn('📝 Current URL:', APPS_SCRIPT_URL);
+    } else {
+      console.log('✅ SUCCESS: Getting real AI analysis with actual data!');
+    }
+  }
+  
+  return response;
 };
 
 // Experimental AI features
