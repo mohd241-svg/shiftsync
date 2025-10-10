@@ -2062,7 +2062,7 @@ function createCompleteShift(data, clientTimezone) {
     
     Logger.log(`Processing shift for ${employeeName} (${employeeId}) on ${shiftDate}`);
     
-    // 🔥 CALCULATE SMART STATUS INSTEAD OF USING scheduleStatus
+    // 🔥 CALCULATE SMART STATUS WITH DATE AWARENESS
     // Special handling for active segments during creation
     const hasActiveSegment = segments.some(seg => !seg.endTime);
     Logger.log(`🔍 DEBUG: hasActiveSegment = ${hasActiveSegment}`);
@@ -2070,34 +2070,67 @@ function createCompleteShift(data, clientTimezone) {
     
     let smartStatus;
     
-    if (hasActiveSegment) {
-      // If creating a shift with active segments, it should be ACTIVE
-      smartStatus = 'ACTIVE';
-      Logger.log('🎯 Smart status: ACTIVE (has active segment during creation)');
-    } else {
-      // 🔥 SPECIAL CHECK: If all segments have endTime but current time is BEFORE the last endTime
-      // this might be a frontend issue where it's sending completed segments for an active shift
-      const currentTime = getCurrentTimeString(clientTimezone);
-      const [currentHour, currentMin] = currentTime.split(':').map(Number);
-      const currentMinutes = currentHour * 60 + currentMin;
-      
-      if (lastEndTime) {
-        const [endHour, endMin] = lastEndTime.split(':').map(Number);
-        const endMinutes = endHour * 60 + endMin;
+    // 🚨 DATE-AWARE STATUS VALIDATION
+    const today = new Date();
+    const shiftDateObj = new Date(shiftDate);
+    const isShiftFromPast = shiftDateObj.toDateString() < today.toDateString();
+    const isShiftFromFuture = shiftDateObj.toDateString() > today.toDateString();
+    const isShiftToday = shiftDateObj.toDateString() === today.toDateString();
+    
+    Logger.log(`📅 Date Analysis: Shift=${shiftDate}, Today=${today.toDateString()}`);
+    Logger.log(`📅 isPast=${isShiftFromPast}, isFuture=${isShiftFromFuture}, isToday=${isShiftToday}`);
+    
+    if (isShiftFromPast) {
+      // For past dates, shifts can only be COMPLETED or DRAFT (never ACTIVE)
+      if (hasActiveSegment) {
+        Logger.log('🚨 PAST DATE with active segment - forcing COMPLETED');
+        smartStatus = 'COMPLETED';
+      } else if (segments.length > 0 && segments.every(seg => seg.endTime)) {
+        Logger.log('🎯 Past shift with complete segments - COMPLETED');
+        smartStatus = 'COMPLETED';
+      } else {
+        Logger.log('🎯 Past shift with incomplete data - DRAFT');
+        smartStatus = 'DRAFT';
+      }
+    } else if (isShiftFromFuture) {
+      // For future dates, shifts can only be DRAFT or OFFLINE (never ACTIVE/COMPLETED)
+      Logger.log('🎯 Future shift - can only be DRAFT or OFFLINE');
+      smartStatus = 'DRAFT';
+    } else if (isShiftToday) {
+      // For today's shifts, use normal time-based logic
+      if (hasActiveSegment) {
+        // If creating a shift with active segments, it should be ACTIVE
+        smartStatus = 'ACTIVE';
+        Logger.log('🎯 Today\'s shift with active segment - ACTIVE');
+      } else {
+        // 🔥 SPECIAL CHECK: If all segments have endTime but current time is BEFORE the last endTime
+        // this might be a frontend issue where it's sending completed segments for an active shift
+        const currentTime = getCurrentTimeString(clientTimezone);
+        const [currentHour, currentMin] = currentTime.split(':').map(Number);
+        const currentMinutes = currentHour * 60 + currentMin;
         
-        Logger.log(`🚨 FRONTEND ISSUE CHECK: Current ${currentTime} (${currentMinutes} min) vs End ${lastEndTime} (${endMinutes} min)`);
-        
-        if (currentMinutes < endMinutes) {
-          // Current time is before shift end - this should be ACTIVE, not COMPLETED
-          Logger.log('🚨 FRONTEND ISSUE DETECTED: Shift has endTime in future but current time is before it - forcing ACTIVE');
-          smartStatus = 'ACTIVE';
+        if (lastEndTime) {
+          const [endHour, endMin] = lastEndTime.split(':').map(Number);
+          const endMinutes = endHour * 60 + endMin;
+          
+          Logger.log(`🚨 TODAY'S SHIFT CHECK: Current ${currentTime} (${currentMinutes} min) vs End ${lastEndTime} (${endMinutes} min)`);
+          
+          if (currentMinutes < endMinutes) {
+            // Current time is before shift end - this should be ACTIVE, not COMPLETED
+            Logger.log('🚨 Today\'s shift - Current time before end time - ACTIVE');
+            smartStatus = 'ACTIVE';
+          } else {
+            smartStatus = calculateSmartShiftStatus(segments, firstStartTime, lastEndTime);
+          }
         } else {
           smartStatus = calculateSmartShiftStatus(segments, firstStartTime, lastEndTime);
         }
-      } else {
-        smartStatus = calculateSmartShiftStatus(segments, firstStartTime, lastEndTime);
       }
-      Logger.log(`🎯 Smart status calculated: ${smartStatus}`);
+      Logger.log(`🎯 Today's shift calculated status: ${smartStatus}`);
+    } else {
+      // Fallback for any edge cases
+      Logger.log('🎯 Edge case - defaulting to DRAFT');
+      smartStatus = 'DRAFT';
     }
     
     Logger.log(`🚨 FINAL SMART STATUS TO SAVE: ${smartStatus}`);

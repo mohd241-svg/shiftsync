@@ -96,6 +96,40 @@ const ShiftEntry = () => {
     
     console.log('📅 Shift date:', shiftDateObj.toDateString());
     
+    // 🚨 DATE-AWARE STATUS VALIDATION
+    const today = new Date();
+    const isShiftFromPast = shiftDateObj.toDateString() < today.toDateString();
+    const isShiftFromFuture = shiftDateObj.toDateString() > today.toDateString();
+    const isShiftToday = shiftDateObj.toDateString() === today.toDateString();
+    
+    console.log(`📅 Employee Dashboard Date Analysis: Shift=${shiftDateObj.toDateString()}, Today=${today.toDateString()}`);
+    console.log(`📅 isPast=${isShiftFromPast}, isFuture=${isShiftFromFuture}, isToday=${isShiftToday}`);
+    
+    if (isShiftFromPast) {
+      // For past dates, shifts can only be COMPLETED or DRAFT (never ACTIVE)
+      const hasActiveSegment = segments.some(seg => !seg.endTime);
+      if (hasActiveSegment) {
+        console.log('🚨 PAST DATE with active segment - forcing COMPLETED');
+        return 'COMPLETED';
+      } else if (segments.length > 0 && segments.every(seg => seg.endTime)) {
+        console.log('🎯 Past shift with complete segments - COMPLETED');
+        return 'COMPLETED';
+      } else {
+        console.log('🎯 Past shift with incomplete data - DRAFT');
+        return 'DRAFT';
+      }
+    } else if (isShiftFromFuture) {
+      // For future dates, shifts can only be DRAFT or OFFLINE (never ACTIVE/COMPLETED)
+      console.log('🎯 Future shift - can only be DRAFT or OFFLINE');
+      return 'DRAFT';
+    }
+    
+    // For today's shifts, continue with normal time-based logic
+    if (!isShiftToday) {
+      console.log('🎯 Not today\'s shift - defaulting to DRAFT');
+      return 'DRAFT';
+    }
+    
     // Get the actual start and end times from segments
     const firstSegment = segments[0];
     const lastSegment = segments[segments.length - 1];
@@ -143,10 +177,10 @@ const ShiftEntry = () => {
       }
     }
 
-    // If all segments have end times but no clear end time, likely still active
+    // If all segments have end times but no clear end time, likely completed for today
     if (segments.length > 0 && segments.every(seg => seg.endTime)) {
-      console.log('🟡 All segments have end times but unclear - ACTIVE for safety');
-      return 'ACTIVE'; // Keep as active for manual completion
+      console.log('🟡 All segments have end times - COMPLETED for today');
+      return 'COMPLETED';
     }
 
     console.log('📝 Fallback to DRAFT');
