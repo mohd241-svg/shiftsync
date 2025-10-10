@@ -11,7 +11,101 @@ const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycby1z1P_tMx2EwOp
 
 
 
-// Enhanced API call wrapper that includes timezone info
+// Test if backend has updated AI analysis
+export const testBackendVersion = async () => {
+  console.log('🔍 Testing backend version...');
+  console.log('📡 Current URL:', APPS_SCRIPT_URL);
+  
+  try {
+    const response = await makeAPICall({
+      action: 'testConnection'
+    });
+    
+    console.log('📋 Backend response:', response);
+    
+    if (response.success) {
+      // Check if the backend has the new AI functions
+      if (response.actions && response.actions.includes('processAIPromptWithData')) {
+        console.log('✅ Backend has AI functions');
+        
+        // Now test the AI with a simple prompt
+        const aiResponse = await processAIPromptWithData('test backend version', false);
+        console.log('🤖 AI Response:', aiResponse);
+        
+        if (aiResponse.success && aiResponse.data && aiResponse.data.analysis) {
+          const analysis = aiResponse.data.analysis;
+          
+          // Check for signs of OLD canned responses
+          if (analysis.includes('Data Quality Score: 100/100') || 
+              analysis.includes('System Utilization: 4.486111111111112%') ||
+              analysis.includes('Consider expanding staff team')) {
+            return {
+              isUpdated: false,
+              version: 'OLD_BACKEND',
+              message: '🚨 Backend has OLD AI with canned responses!',
+              needsDeployment: true,
+              url: APPS_SCRIPT_URL
+            };
+          } else if (analysis.includes('🤖 AI Analysis Results:') || 
+                     analysis.includes('RAW DATA SUMMARY') ||
+                     analysis.includes('COMPLETE EMPLOYEE ANALYSIS')) {
+            return {
+              isUpdated: true,
+              version: 'NEW_BACKEND',
+              message: '✅ Backend has NEW AI with real data analysis!',
+              needsDeployment: false,
+              url: APPS_SCRIPT_URL
+            };
+          } else {
+            return {
+              isUpdated: false,
+              version: 'UNKNOWN',
+              message: '❓ Backend AI version unclear',
+              needsDeployment: true,
+              url: APPS_SCRIPT_URL,
+              sampleResponse: analysis.substring(0, 200)
+            };
+          }
+        } else {
+          return {
+            isUpdated: false,
+            version: 'NO_AI',
+            message: '❌ Backend AI not working',
+            needsDeployment: true,
+            url: APPS_SCRIPT_URL
+          };
+        }
+      } else {
+        return {
+          isUpdated: false,
+          version: 'OLD_BACKEND',
+          message: '🚨 Backend missing AI functions!',
+          needsDeployment: true,
+          url: APPS_SCRIPT_URL
+        };
+      }
+    } else {
+      return {
+        isUpdated: false,
+        version: 'CONNECTION_FAILED',
+        message: '❌ Cannot connect to backend',
+        needsDeployment: true,
+        url: APPS_SCRIPT_URL,
+        error: response.message
+      };
+    }
+  } catch (error) {
+    console.error('🚨 Backend test failed:', error);
+    return {
+      isUpdated: false,
+      version: 'ERROR',
+      message: '❌ Backend test failed: ' + error.message,
+      needsDeployment: true,
+      url: APPS_SCRIPT_URL,
+      error: error.message
+    };
+  }
+};
 export const makeAPICall = async (payload) => {
   try {
     console.log('=== API CALL DEBUG START ===');

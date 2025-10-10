@@ -12,7 +12,8 @@ import {
   processAIPromptWithData,
   runExperimentalAI,
   getAIAnalysisSuggestions,
-  getAIInsightsDashboard
+  getAIInsightsDashboard,
+  testBackendVersion
 } from '../../services/appScriptAPI';
 
 const AdminDashboard = () => {
@@ -790,6 +791,26 @@ const AdminDashboard = () => {
       setMessage('❌ Enhanced AI analysis failed: ' + handleAPIError(error));
     } finally {
       setAiLoading(false);
+    }
+  };
+
+  const handleTestBackend = async () => {
+    try {
+      setLoading(true);
+      setMessage('🔍 Testing backend version...');
+      
+      const result = await testBackendVersion();
+      
+      if (result.isUpdated) {
+        setMessage(`✅ ${result.message} Backend is up to date!`);
+      } else {
+        setMessage(`🚨 ${result.message} Need to deploy updated appscript.js!`);
+        console.log('📋 Backend test details:', result);
+      }
+    } catch (error) {
+      setMessage('❌ Backend test failed: ' + handleAPIError(error));
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -3031,6 +3052,38 @@ const AdminDashboard = () => {
           <div className="row">
             <div className="col-12">
               <h2 className="h4 mb-3">🧪 AI & Experimental Features</h2>
+              
+              {/* Backend Test */}
+              <div className="card mb-4">
+                <div className="card-header">
+                  <h5 className="card-title mb-0">🔍 Backend Status</h5>
+                </div>
+                <div className="card-body">
+                  <p className="text-muted">
+                    Check if your backend has the latest AI analysis code deployed.
+                  </p>
+                  
+                  <div className="d-grid">
+                    <button 
+                      className="btn btn-outline-warning"
+                      onClick={handleTestBackend}
+                      disabled={loading}
+                    >
+                      {loading ? (
+                        <>
+                          <span className="spinner-border spinner-border-sm me-2" />
+                          Testing...
+                        </>
+                      ) : (
+                        <>
+                          <i className="bi bi-cloud-check me-2"></i>
+                          Test Backend Version
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </div>
               
               {/* Simple AI Prompt */}
               <div className="card mb-4">
