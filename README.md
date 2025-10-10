@@ -1,148 +1,104 @@
-# 📊 Staff Portal - Time Tracking System
+# � Staff Portal - AI-Powered Workforce Management System
 
-A modern React-based staff time tracking application with Google Apps Script backend integration.
+[![React](https://img.shields.io/badge/React-19.1.0-blue.svg)](https://reactjs.org/)
+[![Material-UI](https://img.shields.io/badge/Material--UI-7.2.0-green.svg)](https://mui.com/)
+[![Google Apps Script](https://img.shields.io/badge/Backend-Google%20Apps%20Script-yellow.svg)](https://script.google.com/)
+[![License](https://img.shields.io/badge/License-MIT-red.svg)](LICENSE)
 
-## 🎯 **Features**
+A comprehensive, AI-powered workforce management system with real-time shift tracking, smart status calculation, and advanced analytics. Built with React.js frontend and Google Apps Script backend for a fully serverless experience.
 
-- **Time Tracking**: Start, stop, and manage work shifts
-- **Shift History**: View detailed shift records with timezone support
-- **User Authentication**: Secure login with employee credentials
-- **Mobile Responsive**: Works seamlessly on desktop and mobile devices
-- **Real-time Updates**: Live shift status and duration tracking
-- **Timezone Intelligence**: Times display in user's local timezone
+## ✨ Key Features
 
-## 🚀 **Quick Start**
+### 🎯 Core Functionality
+- **Real-time Shift Tracking** - Live status updates with timezone-aware calculations
+- **Smart Status Detection** - Automatic DRAFT/OFFLINE/ACTIVE/COMPLETED status management
+- **Multi-timezone Support** - Handles global workforce across different time zones
+- **Responsive Design** - Works seamlessly on desktop, tablet, and mobile devices
 
-### **Frontend (React)**
-```bash
-# Install dependencies
-npm install
+### 🧠 AI-Powered Analytics
+- **Shift Pattern Analysis** - Intelligent insights into workforce patterns
+- **Anomaly Detection** - Automatic identification of unusual shift behaviors
+- **Productivity Insights** - Data-driven employee performance metrics
+- **Custom AI Queries** - Natural language analysis with confidence scoring
+- **Smart Schedule Suggestions** - AI-recommended shift optimizations
 
-# Start development server
-npm start
-# Opens http://localhost:3000
+### � Staff Management
+- **Complete CRUD Operations** - Add, edit, delete staff with form validation
+- **Role-based Access Control** - Admin and Staff dashboards with appropriate permissions
+- **Department Management** - Organize staff by departments and roles
+- **Timezone Preferences** - Individual timezone settings for global teams
 
-# Build for production
-npm run build
-```
+### 📊 Advanced Reporting
+- **Multi-format Export** - CSV, JSON export with automatic conversion
+- **Time Period Filtering** - Flexible date range selections
+- **Real-time Status Sync** - Backend synchronization with conflict resolution
+- **Comprehensive Logging** - Detailed audit trails and debugging information
 
-### **Backend (Google Apps Script)**
-1. **Setup Instructions**: See `apps-script-updates/UPDATE-CHECKLIST.md`
-2. **Timezone Support**: Enhanced time handling for global users
-3. **Clean Dashboard**: Single dynamic table system for reporting
+## � Quick Start
 
-## 📁 **Project Structure**
+### Prerequisites
+- Node.js (v14 or higher)
+- Google Account for Apps Script backend
+- Modern web browser with JavaScript enabled
 
-```
-Staff-Portal/
-├── src/                    # React frontend source code
-│   ├── components/         # React components
-│   ├── contexts/          # React context providers
-│   ├── services/          # API communication
-│   └── styles/            # CSS styling
-├── public/                # Static assets
-├── build/                 # Production build output
-├── apps-script-updates/   # Google Apps Script updates
-│   ├── 01-safety-and-testing/  # Testing functions
-│   ├── 02-new-functions/       # Timezone-aware functions
-│   ├── 03-cleanup-system/      # Table cleanup
-│   └── 04-core-updates/        # Updated core functions
-└── package.json           # Dependencies and scripts
-```
+### Installation
 
-## 🛠️ **Technology Stack**
+1. **Clone the repository**
+   ```bash
+   git clone https://github.com/mdismailzzz02/Shifts-sync.git
+   cd Shifts-sync
+   ```
 
-### **Frontend**
-- **React 19.1.0** - Modern UI framework
-- **Bootstrap 5.3** - Responsive CSS framework
-- **JavaScript ES6+** - Modern JavaScript features
+2. **Install dependencies**
+   ```bash
+   npm install
+   ```
 
-### **Backend**
-- **Google Apps Script** - Cloud-based backend
-- **Google Sheets** - Data storage
-- **RESTful API** - HTTP-based communication
+3. **Configure backend URL**
+   Update the `API_URL` in `src/services/appScriptAPI.js`:
+   ```javascript
+   const API_URL = 'https://script.google.com/macros/s/YOUR_DEPLOYMENT_ID/exec';
+   ```
 
-## 🌍 **Timezone Features**
+4. **Start development server**
+   ```bash
+   npm start
+   ```
 
-- **Auto-detection**: Automatically detects user's timezone
-- **Smart Formatting**: Displays times in local format
-- **Global Support**: Works across different timezones
-- **Consistent Data**: Server stores UTC, displays local
+5. **Access the application**
+   Open [http://localhost:3000](http://localhost:3000) in your browser
 
-## 📊 **Apps Script Updates**
+## 📱 Usage
 
-The `apps-script-updates/` folder contains organized updates:
+### For Employees
+1. **Login** with credentials (e.g., john@example.com / password123)
+2. **Track shifts** using the Shift Entry interface
+3. **View history** in the dashboard
+4. **Monitor status** with real-time updates
 
-1. **Safety & Testing** - Verify system integrity
-2. **New Functions** - Timezone-aware capabilities
-3. **Cleanup System** - Remove old table systems
-4. **Core Updates** - Enhanced API functions
+### For Administrators
+1. **Access Admin Dashboard** with admin credentials
+2. **Manage staff** - Add, edit, delete employees
+3. **Monitor all shifts** - Real-time overview of workforce
+4. **Generate reports** - Export data in multiple formats
+5. **Use AI analytics** - Get intelligent insights and custom analysis
 
-**Start Here**: `apps-script-updates/UPDATE-CHECKLIST.md`
+## 🔧 Key Technologies
 
-## 🔧 **Development**
+- **React 19.1.0** - Modern JavaScript framework
+- **Material-UI 7.2.0** - Component library and design system
+- **Bootstrap 5.3.8** - Additional styling and responsive grid
+- **Google Apps Script** - Serverless backend functions
+- **Google Sheets** - Database with real-time collaboration
 
-### **Available Scripts**
-- `npm start` - Development server (localhost:3000)
-- `npm test` - Run test suite
-- `npm run build` - Create production build
-- `npm run eject` - Eject from Create React App (one-way!)
+## 📄 License
 
-### **Key Components**
-- **`Login.js`** - Authentication interface
-- **`StaffDashboard.js`** - Main staff interface
-- **`AdminDashboard.js`** - Administrative controls
-- **`ShiftHistory.js`** - Historical shift data with timezone support
+This project is licensed under the MIT License.
 
-### **API Integration**
-- **`appScriptAPI.js`** - Handles Google Apps Script communication
-- **`AuthContext.js`** - Manages authentication state
+## 📞 Support
 
-## 🛡️ **Safety & Updates**
-
-- **Backup Strategy**: Always backup before updates
-- **Phased Updates**: Follow numbered update phases
-- **Testing Functions**: Verify each step works
-- **Rollback Plan**: Easy restore if needed
-
-## 📱 **Mobile Support**
-
-- Responsive design for all screen sizes
-- Touch-friendly interface
-- Mobile navigation patterns
-- Optimized for smartphone use
-
-## 🎯 **Getting Help**
-
-1. **Update Issues**: See `apps-script-updates/UPDATE-CHECKLIST.md`
-2. **Frontend Issues**: Check browser console for errors
-3. **Backend Issues**: Review Google Apps Script execution logs
-4. **General Issues**: Check this README for common solutions
+For support, email mdismailzzz02@gmail.com or create an issue in the GitHub repository.
 
 ---
 
-**🚀 Ready to use!** Start the frontend with `npm start` and follow the Apps Script update guide for backend improvements.
-
-### Code Splitting
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
-
-### Analyzing the Bundle Size
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
-
-### Making a Progressive Web App
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
-
-### Advanced Configuration
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
-
-### Deployment
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
-
-### `npm run build` fails to minify
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
+**Built with ❤️ by [mdismailzzz02](https://github.com/mdismailzzz02)**
