@@ -1,6 +1,6 @@
 // Replace with your actual Google Apps Script Web App URL
 // Replace with your NEW Google Apps Script Web App URL after redeployment
-const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbypWEn8KgLn4HAE8O9y2tmxjDdbtRqLH7yYYAD0V5F3_AfCFu8EUOZA9OxVkEo2WYm2Cw/exec';
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzlO-NvXC0lMeG4-bFCl6xyR3LQXSfpozYdoXdd8Bji7gnSBYrZqv9aT8ZWH-_FMKQZQA/exec';
 
 
 
