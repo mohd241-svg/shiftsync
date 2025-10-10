@@ -3200,110 +3200,6 @@ const AdminDashboard = () => {
                 </div>
               </div>
 
-              {/* AI Features Section */}
-              <div className="card mb-3">
-                <div className="card-header">
-                  <h5 className="card-title mb-0">🤖 AI Features</h5>
-                </div>
-                <div className="card-body">
-                  <p className="text-muted">
-                    Leverage artificial intelligence to gain insights from your staff data, detect patterns, 
-                    and optimize workforce management with smart recommendations.
-                  </p>
-                  <div className="row g-3">
-                    <div className="col-12">
-                      <h6 className="text-muted mb-3">🧠 Intelligent Analytics</h6>
-                    </div>
-                    <div className="col-12 col-md-6">
-                      <div className="d-grid">
-                        <button 
-                          className="btn btn-outline-info"
-                          onClick={handleAIShiftAnalysis}
-                          disabled={loading}
-                        >
-                          <i className="bi bi-graph-up me-2"></i>
-                          AI Shift Pattern Analysis
-                        </button>
-                        <small className="text-muted mt-1">
-                          Analyze shift patterns and generate insights
-                        </small>
-                      </div>
-                    </div>
-                    <div className="col-12 col-md-6">
-                      <div className="d-grid">
-                        <button 
-                          className="btn btn-outline-info"
-                          onClick={handleStaffProductivityInsights}
-                          disabled={loading}
-                        >
-                          <i className="bi bi-person-check me-2"></i>
-                          Productivity Insights
-                        </button>
-                        <small className="text-muted mt-1">
-                          Generate staff performance analytics
-                        </small>
-                      </div>
-                    </div>
-                    <div className="col-12 col-md-6">
-                      <div className="d-grid">
-                        <button 
-                          className="btn btn-outline-warning"
-                          onClick={handleAnomalyDetection}
-                          disabled={loading}
-                        >
-                          <i className="bi bi-exclamation-triangle me-2"></i>
-                          Anomaly Detection
-                        </button>
-                        <small className="text-muted mt-1">
-                          Detect unusual patterns in shift data
-                        </small>
-                      </div>
-                    </div>
-                    <div className="col-12 col-md-6">
-                      <div className="d-grid">
-                        <button 
-                          className="btn btn-outline-success"
-                          onClick={handleSmartScheduleSuggestions}
-                          disabled={loading}
-                        >
-                          <i className="bi bi-calendar-check me-2"></i>
-                          Smart Schedule Suggestions
-                        </button>
-                        <small className="text-muted mt-1">
-                          AI-powered scheduling recommendations
-                        </small>
-                      </div>
-                    </div>
-                    <div className="col-12">
-                      <div className="d-grid">
-                        <button 
-                          className="btn btn-outline-purple"
-                          onClick={handleCustomAIPrompt}
-                          disabled={loading}
-                          style={{ borderColor: '#6f42c1', color: '#6f42c1' }}
-                        >
-                          <i className="bi bi-chat-dots me-2"></i>
-                          Custom AI Prompt
-                        </button>
-                        <small className="text-muted mt-1">
-                          Ask your own questions and get AI insights
-                        </small>
-                      </div>
-                    </div>
-                  </div>
-                  
-                  <div className="alert alert-light mt-3">
-                    <h6 className="alert-heading">💡 AI Features Capabilities</h6>
-                    <ul className="mb-0 small">
-                      <li><strong>Pattern Recognition:</strong> Identifies trends in work schedules and productivity</li>
-                      <li><strong>Anomaly Detection:</strong> Flags unusual shift patterns that may need attention</li>
-                      <li><strong>Predictive Analytics:</strong> Suggests optimal scheduling based on historical data</li>
-                      <li><strong>Performance Insights:</strong> Provides data-driven employee performance metrics</li>
-                    </ul>
-                  </div>
-                </div>
-              </div>
-
               {/* System Actions */}
               <div className="card">
                 <div className="card-header">
@@ -3445,17 +3341,117 @@ const AdminDashboard = () => {
         {activeTab === 'experimental' && (
           <div className="row">
             <div className="col-12">
-              <h2 className="h4 mb-3">🧪 Experimental AI Features</h2>
+              <h2 className="h4 mb-3">🧪 AI & Experimental Features</h2>
               
-              {/* Enhanced AI Analysis */}
+              {/* Traditional AI Features */}
               <div className="card mb-4">
                 <div className="card-header">
-                  <h5 className="card-title mb-0">🤖 Enhanced AI Analysis</h5>
+                  <h5 className="card-title mb-0">🤖 Traditional AI Analytics</h5>
                 </div>
                 <div className="card-body">
                   <p className="text-muted">
-                    Advanced AI analysis that automatically fetches comprehensive sheet data before processing your prompts.
-                    All responses are displayed directly on the dashboard.
+                    Traditional AI features that generate insights and download reports.
+                  </p>
+                  <div className="row g-3">
+                    <div className="col-12 col-md-6">
+                      <div className="d-grid">
+                        <button 
+                          className="btn btn-outline-info"
+                          onClick={handleAIShiftAnalysis}
+                          disabled={loading}
+                        >
+                          <i className="bi bi-graph-up me-2"></i>
+                          AI Shift Pattern Analysis
+                        </button>
+                        <small className="text-muted mt-1">
+                          Analyze shift patterns and generate insights
+                        </small>
+                      </div>
+                    </div>
+                    <div className="col-12 col-md-6">
+                      <div className="d-grid">
+                        <button 
+                          className="btn btn-outline-info"
+                          onClick={handleStaffProductivityInsights}
+                          disabled={loading}
+                        >
+                          <i className="bi bi-person-check me-2"></i>
+                          Productivity Insights
+                        </button>
+                        <small className="text-muted mt-1">
+                          Generate staff performance analytics
+                        </small>
+                      </div>
+                    </div>
+                    <div className="col-12 col-md-6">
+                      <div className="d-grid">
+                        <button 
+                          className="btn btn-outline-warning"
+                          onClick={handleAnomalyDetection}
+                          disabled={loading}
+                        >
+                          <i className="bi bi-exclamation-triangle me-2"></i>
+                          Anomaly Detection
+                        </button>
+                        <small className="text-muted mt-1">
+                          Detect unusual patterns in shift data
+                        </small>
+                      </div>
+                    </div>
+                    <div className="col-12 col-md-6">
+                      <div className="d-grid">
+                        <button 
+                          className="btn btn-outline-success"
+                          onClick={handleSmartScheduleSuggestions}
+                          disabled={loading}
+                        >
+                          <i className="bi bi-calendar-check me-2"></i>
+                          Smart Schedule Suggestions
+                        </button>
+                        <small className="text-muted mt-1">
+                          AI-powered scheduling recommendations
+                        </small>
+                      </div>
+                    </div>
+                    <div className="col-12">
+                      <div className="d-grid">
+                        <button 
+                          className="btn btn-outline-purple"
+                          onClick={handleCustomAIPrompt}
+                          disabled={loading}
+                          style={{ borderColor: '#6f42c1', color: '#6f42c1' }}
+                        >
+                          <i className="bi bi-chat-dots me-2"></i>
+                          Custom AI Prompt (Legacy)
+                        </button>
+                        <small className="text-muted mt-1">
+                          Traditional AI prompts with CSV downloads
+                        </small>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="alert alert-light mt-3">
+                    <h6 className="alert-heading">💡 Traditional AI Capabilities</h6>
+                    <ul className="mb-0 small">
+                      <li><strong>Pattern Recognition:</strong> Identifies trends in work schedules and productivity</li>
+                      <li><strong>Anomaly Detection:</strong> Flags unusual shift patterns that may need attention</li>
+                      <li><strong>Predictive Analytics:</strong> Suggests optimal scheduling based on historical data</li>
+                      <li><strong>Performance Insights:</strong> Provides data-driven employee performance metrics</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+
+              {/* Enhanced AI Analysis */}
+              <div className="card mb-4">
+                <div className="card-header">
+                  <h5 className="card-title mb-0">🚀 Enhanced AI Analysis (Data-First)</h5>
+                </div>
+                <div className="card-body">
+                  <p className="text-muted">
+                    <strong>Next-generation AI analysis</strong> that automatically fetches comprehensive sheet data before processing your prompts.
+                    All responses are displayed directly on the dashboard - no downloads required!
                   </p>
                   
                   <div className="mb-3">
@@ -3484,7 +3480,7 @@ const AdminDashboard = () => {
                         ) : (
                           <>
                             <i className="bi bi-database me-2"></i>
-                            Analyze with Data
+                            Enhanced AI Analysis
                           </>
                         )}
                       </button>
@@ -3496,7 +3492,7 @@ const AdminDashboard = () => {
                         disabled={aiLoading}
                       >
                         <i className="bi bi-lightbulb me-2"></i>
-                        Get Suggestions
+                        Get Smart Suggestions
                       </button>
                     </div>
                   </div>
@@ -3550,11 +3546,11 @@ const AdminDashboard = () => {
               {/* Experimental AI Features */}
               <div className="card mb-4">
                 <div className="card-header">
-                  <h5 className="card-title mb-0">🔬 Experimental Features</h5>
+                  <h5 className="card-title mb-0">🔬 Cutting-Edge Experiments</h5>
                 </div>
                 <div className="card-body">
                   <p className="text-muted">
-                    Cutting-edge AI experiments for advanced workforce analytics and insights.
+                    Experimental AI features for advanced workforce analytics and insights.
                   </p>
                   
                   <div className="mb-3">
