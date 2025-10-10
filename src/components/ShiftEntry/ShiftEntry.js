@@ -272,12 +272,45 @@ const ShiftEntry = () => {
     }
 
     try {
+      // Check if there's already an ACTIVE or COMPLETED shift for today
+      const todayDate = getCurrentDate();
+      console.log('🔍 Checking for existing shifts on:', todayDate);
+      
+      const existingShiftsResponse = await makeAPICall({
+        action: 'getShifts',
+        employeeId: user.id,
+        startDate: todayDate,
+        endDate: todayDate
+      });
+
+      if (existingShiftsResponse.success && existingShiftsResponse.data) {
+        const todayShifts = Array.isArray(existingShiftsResponse.data) 
+          ? existingShiftsResponse.data 
+          : [existingShiftsResponse.data];
+        
+        const activeOrCompletedShifts = todayShifts.filter(shift => 
+          shift.status === 'ACTIVE' || shift.status === 'COMPLETED'
+        );
+        
+        console.log('🔍 Found existing shifts for today:', activeOrCompletedShifts);
+        
+        if (activeOrCompletedShifts.length > 0) {
+          const existingShift = activeOrCompletedShifts[0];
+          const statusText = existingShift.status === 'ACTIVE' ? 'active' : 'completed';
+          
+          setMessage(`Error: You already have an ${statusText} shift for today (${todayDate}). Please use the history tab to edit your existing shift instead of creating a new one.`);
+          setLoading(false);
+          return;
+        }
+      }
+
+      // Proceed with creating new shift if no conflicts
       const response = await submitTimeSegments({
         segments,
         employeeName: user.name,
         employeeId: user.id,
         shiftType,
-        date: getCurrentDate(),
+        date: todayDate,
         ...scheduleInfo
       });
 
@@ -426,6 +459,20 @@ const ShiftEntry = () => {
         <Alert 
           severity={message.includes('Error') ? 'error' : 'success'} 
           sx={{ mb: 2 }}
+          action={
+            message.includes('already have an') && message.includes('shift for today') ? (
+              <Button 
+                color="inherit" 
+                size="small"
+                onClick={() => {
+                  // This would need to be passed from parent to navigate to history
+                  window.location.hash = '#history'; // Simple navigation
+                }}
+              >
+                Go to History
+              </Button>
+            ) : null
+          }
         >
           {message}
         </Alert>

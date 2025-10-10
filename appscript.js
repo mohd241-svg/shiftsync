@@ -2110,7 +2110,48 @@ function createCompleteShift(data, clientTimezone) {
     try {
       lock.waitLock(15000);
       
-      // Check if shift already exists for today
+      // 🚨 DUPLICATE SHIFT VALIDATION - Prevent multiple ACTIVE/COMPLETED shifts per day
+      if (!isUpdate && !isEmployeeEdit) {
+        Logger.log('🔍 Checking for duplicate ACTIVE/COMPLETED shifts for the same day...');
+        
+        const data = sheet.getDataRange().getValues();
+        const headers = data[0];
+        const rows = data.slice(1);
+        
+        // Find existing ACTIVE or COMPLETED shifts for this employee on this date
+        const duplicateShifts = rows.filter(row => {
+          const rowEmployeeId = String(row[2]).trim(); // Column C - Employee ID
+          const rowEmployeeName = String(row[1]).trim(); // Column B - Employee Name  
+          const rowShiftDate = normalizeDate(row[3]); // Column D - Shift Date
+          const rowStatus = String(row[10]).trim(); // Column K - Status
+          
+          return (rowEmployeeId === employeeId || rowEmployeeName === employeeName) &&
+                 rowShiftDate === shiftDate &&
+                 (rowStatus === 'ACTIVE' || rowStatus === 'COMPLETED');
+        });
+        
+        if (duplicateShifts.length > 0) {
+          const existingShift = duplicateShifts[0];
+          const existingStatus = existingShift[10];
+          const existingShiftId = existingShift[0];
+          
+          Logger.log(`🚨 DUPLICATE SHIFT DETECTED: ${existingShiftId} with status ${existingStatus}`);
+          
+          return {
+            success: false,
+            message: `You already have an ${existingStatus.toLowerCase()} shift for ${shiftDate}. Please edit your existing shift instead of creating a new one.`,
+            data: {
+              existingShiftId: existingShiftId,
+              existingStatus: existingStatus,
+              date: shiftDate
+            }
+          };
+        }
+        
+        Logger.log('✅ No duplicate shifts found - proceeding with creation');
+      }
+      
+      // Check if shift already exists for today (original logic for updates)
       const existingRow = findShiftRowDualCheck(sheet, employeeId, employeeName, shiftDate);
       if (existingRow > 0) {
         Logger.log('Updating existing shift in row: ' + existingRow);

@@ -206,6 +206,14 @@ const TimeSegmentEntry = ({ onSubmit, existingSegments = [], loading = false, sh
             </Typography>
           </Box>
           
+          {/* Information Note */}
+          <Alert severity="info" sx={{ mb: 2, fontSize: '0.875rem' }}>
+            <Typography variant="body2">
+              <strong>Note:</strong> You can only have one active or completed shift per day. 
+              If you need to modify an existing shift, please use the History tab to edit your times.
+            </Typography>
+          </Alert>
+          
           {/* Status Chips Row - Stack on Mobile */}
           <Box sx={{ 
             display: 'flex', 
