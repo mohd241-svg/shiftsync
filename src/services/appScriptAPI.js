@@ -1,6 +1,6 @@
 // Replace with your actual Google Apps Script Web App URL
 // Replace with your NEW Google Apps Script Web App URL after redeployment
-const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbw4YlJPnVRKvfgaEmgybMyjk9OJcJcW-gwvJ758nMzffEY7ukoJEjnJIEnf59CWarWYYw/exec';
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzCjfAWax5QnVtfi6zWtHXOr4H0WPqdI9uPd8aTIkwiPaXhmZf1I3zxMSfWv2RKptnOTQ/exec';
 
 
 
@@ -1042,6 +1042,55 @@ export const verifyTimezoneColumnF = async () => {
 export const cleanupDuplicateTimezoneColumns = async () => {
   return await makeAPICall({
     action: 'cleanupDuplicateTimezoneColumns'
+  });
+};
+
+// =============================================================
+//                 STATUS UPDATE SYSTEM
+// =============================================================
+
+// Manual status update for all shifts (refresh button functionality)
+export const manualStatusUpdate = async () => {
+  console.log('🔄 Manual status update triggered');
+  return await makeAPICall({
+    action: 'manualStatusUpdate'
+  });
+};
+
+// Automatic status update on portal load
+export const autoStatusUpdateOnLoad = async () => {
+  console.log('🚀 Auto status update on portal load');
+  return await makeAPICall({
+    action: 'autoStatusUpdateOnLoad'
+  });
+};
+
+// Check if shift has been edited before (for one-time edit limit)
+export const checkShiftEditHistory = async (shiftId) => {
+  console.log('📝 Checking edit history for shift:', shiftId);
+  return await makeAPICall({
+    action: 'checkShiftEditHistory',
+    shiftId: shiftId
+  });
+};
+
+// Record that a shift has been edited (for tracking purposes)
+export const recordShiftEdit = async (shiftId, editDetails) => {
+  console.log('✍️ Recording shift edit:', shiftId, editDetails);
+  return await makeAPICall({
+    action: 'recordShiftEdit',
+    shiftId: shiftId,
+    editDetails: editDetails,
+    editTimestamp: new Date().toISOString()
+  });
+};
+
+// Update shift with edit tracking (for employee portal with one-time limit)
+export const updateShiftWithEditTracking = async (shiftData) => {
+  console.log('📋 Updating shift with edit tracking:', shiftData);
+  return await makeAPICall({
+    action: 'updateShiftWithEditTracking',
+    ...shiftData
   });
 };
 

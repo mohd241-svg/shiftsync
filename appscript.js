@@ -850,6 +850,21 @@ function doPost(e) {
       case 'deleteStaff':
         response = deleteStaff(data);
         break;
+      
+      // Status Update System
+      case 'manualStatusUpdate':
+        response = manualStatusUpdate();
+        break;
+      case 'autoStatusUpdateOnLoad':
+        response = autoStatusUpdateOnLoad();
+        break;
+      case 'checkShiftEditHistory':
+        response = checkShiftEditHistory(data);
+        break;
+      case 'updateShiftWithEditTracking':
+        response = updateShiftWithEditTracking(data);
+        break;
+        
       default: 
         response = { success: false, message: 'Invalid action: ' + action };
     }
@@ -8346,5 +8361,285 @@ function deleteStaff(data) {
   } catch (error) {
     Logger.log(`❌ Error deleting staff: ${error}`);
     return { success: false, message: `Error deleting staff: ${error.message}` };
+  }
+}
+
+// =============================================================
+//               STATUS UPDATE SYSTEM
+// =============================================================
+
+/**
+ * Manual status update for all shifts (refresh button functionality)
+ */
+function manualStatusUpdate() {
+  try {
+    Logger.log('🔄 Manual status update triggered from frontend');
+    
+    const spreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const shiftsSheet = spreadsheet.getSheetByName(SHIFTS_SHEET_NAME);
+    
+    if (!shiftsSheet) {
+      return { success: false, message: 'Shifts sheet not found' };
+    }
+    
+    const now = new Date();
+    const currentTime = Utilities.formatDate(now, DEFAULT_TIMEZONE, 'HH:mm');
+    const currentDate = Utilities.formatDate(now, DEFAULT_TIMEZONE, 'yyyy-MM-dd');
+    
+    const values = shiftsSheet.getDataRange().getValues();
+    const headers = values[0];
+    
+    // Find column indices
+    const statusCol = headers.indexOf('Status');
+    const dateCol = headers.indexOf('Shift Date');
+    const firstStartCol = headers.indexOf('First Start Time');
+    const lastEndCol = headers.indexOf('Last End Time');
+    
+    if (statusCol === -1 || dateCol === -1) {
+      return { success: false, message: 'Required columns not found' };
+    }
+    
+    let updatesCount = 0;
+    const updates = [];
+    
+    // Process each shift
+    for (let i = 1; i < values.length; i++) {
+      const row = values[i];
+      const shiftDate = row[dateCol];
+      const currentStatus = row[statusCol];
+      const firstStartTime = row[firstStartCol];
+      const lastEndTime = row[lastEndCol];
+      
+      if (!shiftDate) continue;
+      
+      // Format shift date for comparison
+      const formattedShiftDate = typeof shiftDate === 'string' ? shiftDate : Utilities.formatDate(new Date(shiftDate), DEFAULT_TIMEZONE, 'yyyy-MM-dd');
+      
+      // Determine correct status based on date and time
+      let correctStatus = currentStatus;
+      
+      if (formattedShiftDate < currentDate) {
+        // Past date - should be COMPLETED if it has times
+        if (firstStartTime && lastEndTime && currentStatus !== 'COMPLETED') {
+          correctStatus = 'COMPLETED';
+        }
+      } else if (formattedShiftDate === currentDate) {
+        // Today - check time logic
+        if (firstStartTime && lastEndTime) {
+          // Check if current time is after end time
+          if (currentTime > lastEndTime && currentStatus !== 'COMPLETED') {
+            correctStatus = 'COMPLETED';
+          }
+        }
+      }
+      // Future dates can remain as they are
+      
+      // Update if status needs to change
+      if (correctStatus !== currentStatus) {
+        updates.push({
+          row: i + 1,
+          oldStatus: currentStatus,
+          newStatus: correctStatus,
+          shiftDate: formattedShiftDate
+        });
+        
+        shiftsSheet.getRange(i + 1, statusCol + 1).setValue(correctStatus);
+        updatesCount++;
+      }
+    }
+    
+    Logger.log(`✅ Manual status update completed. Updated ${updatesCount} shifts`);
+    
+    if (updatesCount > 0) {
+      Logger.log('📋 Status updates:', updates);
+    }
+    
+    return {
+      success: true,
+      message: `Status update completed. Updated ${updatesCount} shift(s).`,
+      data: {
+        updatesCount: updatesCount,
+        updates: updates,
+        timestamp: now.toISOString()
+      }
+    };
+    
+  } catch (error) {
+    Logger.log(`❌ Manual status update failed: ${error}`);
+    return { success: false, message: `Status update failed: ${error.message}` };
+  }
+}
+
+/**
+ * Automatic status update on portal load
+ */
+function autoStatusUpdateOnLoad() {
+  try {
+    Logger.log('🚀 Auto status update on portal load');
+    
+    // Run the same logic as manual update but with different messaging
+    const result = manualStatusUpdate();
+    
+    if (result.success) {
+      Logger.log('✅ Auto status update on load completed');
+      return {
+        success: true,
+        message: `Portal loaded. Status check completed. ${result.data?.updatesCount || 0} shifts updated.`,
+        data: result.data
+      };
+    } else {
+      return result;
+    }
+    
+  } catch (error) {
+    Logger.log(`❌ Auto status update on load failed: ${error}`);
+    return { success: false, message: `Auto status update failed: ${error.message}` };
+  }
+}
+
+/**
+ * Check if shift has been edited before (for one-time edit limit)
+ */
+function checkShiftEditHistory(data) {
+  try {
+    const { shiftId } = data;
+    
+    if (!shiftId) {
+      return { success: false, message: 'Missing shiftId' };
+    }
+    
+    const spreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const shiftsSheet = spreadsheet.getSheetByName(SHIFTS_SHEET_NAME);
+    
+    if (!shiftsSheet) {
+      return { success: false, message: 'Shifts sheet not found' };
+    }
+    
+    const values = shiftsSheet.getDataRange().getValues();
+    const headers = values[0];
+    
+    // Find column indices
+    const shiftIdCol = headers.indexOf('Shift ID');
+    const updatedCol = headers.indexOf('Updated');
+    
+    if (shiftIdCol === -1) {
+      return { success: false, message: 'Shift ID column not found' };
+    }
+    
+    // Find the shift
+    for (let i = 1; i < values.length; i++) {
+      const row = values[i];
+      if (row[shiftIdCol] === shiftId) {
+        const hasBeenEdited = updatedCol !== -1 && row[updatedCol] === 'Yes';
+        
+        Logger.log(`📝 Edit history check for ${shiftId}: ${hasBeenEdited ? 'Already edited' : 'Not edited'}`);
+        
+        return {
+          success: true,
+          data: {
+            shiftId: shiftId,
+            hasBeenEdited: hasBeenEdited
+          }
+        };
+      }
+    }
+    
+    return { success: false, message: 'Shift not found' };
+    
+  } catch (error) {
+    Logger.log(`❌ Error checking edit history: ${error}`);
+    return { success: false, message: `Error checking edit history: ${error.message}` };
+  }
+}
+
+/**
+ * Update shift with edit tracking (for employee portal with one-time limit)
+ */
+function updateShiftWithEditTracking(data) {
+  try {
+    const { 
+      shiftId, 
+      firstStartTime, 
+      lastEndTime, 
+      shiftType, 
+      duration,
+      editedBy,
+      editedById 
+    } = data;
+    
+    if (!shiftId || !firstStartTime || !lastEndTime) {
+      return { success: false, message: 'Missing required fields' };
+    }
+    
+    const spreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const shiftsSheet = spreadsheet.getSheetByName(SHIFTS_SHEET_NAME);
+    
+    if (!shiftsSheet) {
+      return { success: false, message: 'Shifts sheet not found' };
+    }
+    
+    const values = shiftsSheet.getDataRange().getValues();
+    const headers = values[0];
+    
+    // Find column indices
+    const shiftIdCol = headers.indexOf('Shift ID');
+    const firstStartCol = headers.indexOf('First Start Time');
+    const lastEndCol = headers.indexOf('Last End Time');
+    const shiftTypeCol = headers.indexOf('Shift Type');
+    const durationCol = headers.indexOf('Total Duration');
+    const updatedCol = headers.indexOf('Updated');
+    const lastUpdatedCol = headers.indexOf('Last Updated');
+    
+    if (shiftIdCol === -1 || firstStartCol === -1 || lastEndCol === -1) {
+      return { success: false, message: 'Required columns not found' };
+    }
+    
+    // Find the shift to update
+    for (let i = 1; i < values.length; i++) {
+      const row = values[i];
+      if (row[shiftIdCol] === shiftId) {
+        // Update the shift data
+        shiftsSheet.getRange(i + 1, firstStartCol + 1).setValue(firstStartTime);
+        shiftsSheet.getRange(i + 1, lastEndCol + 1).setValue(lastEndTime);
+        
+        if (shiftTypeCol !== -1) {
+          shiftsSheet.getRange(i + 1, shiftTypeCol + 1).setValue(shiftType || 'Regular');
+        }
+        
+        if (durationCol !== -1) {
+          shiftsSheet.getRange(i + 1, durationCol + 1).setValue(duration || 0);
+        }
+        
+        // Mark as updated (for edit tracking)
+        if (updatedCol !== -1) {
+          shiftsSheet.getRange(i + 1, updatedCol + 1).setValue('Yes');
+        }
+        
+        // Update last modified timestamp
+        if (lastUpdatedCol !== -1) {
+          const now = new Date();
+          const timestamp = Utilities.formatDate(now, DEFAULT_TIMEZONE, 'yyyy-MM-dd HH:mm:ss');
+          shiftsSheet.getRange(i + 1, lastUpdatedCol + 1).setValue(timestamp);
+        }
+        
+        Logger.log(`✅ Shift ${shiftId} updated with edit tracking by ${editedBy}`);
+        
+        return {
+          success: true,
+          message: 'Shift updated successfully',
+          data: {
+            shiftId: shiftId,
+            updatedBy: editedBy,
+            timestamp: new Date().toISOString()
+          }
+        };
+      }
+    }
+    
+    return { success: false, message: 'Shift not found' };
+    
+  } catch (error) {
+    Logger.log(`❌ Error updating shift with edit tracking: ${error}`);
+    return { success: false, message: `Error updating shift: ${error.message}` };
   }
 }

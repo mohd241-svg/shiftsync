@@ -5,7 +5,9 @@ import {
   getStaffList,
   makeAPICall,
   handleAPIError,
-  debugSheetStructure
+  debugSheetStructure,
+  autoStatusUpdateOnLoad,
+  manualStatusUpdate
 } from '../../services/appScriptAPI';
 
 const AdminDashboard = () => {
@@ -62,6 +64,10 @@ const AdminDashboard = () => {
     department: '',
     timezone: 'Asia/Kolkata (India Standard Time)'
   });
+
+  // Status Update System states
+  const [statusUpdateLoading, setStatusUpdateLoading] = useState(false);
+  const [lastUpdateTime, setLastUpdateTime] = useState(null);
 
 
   // Define exact column order and names from Apps Script (excluding Row Index)
@@ -382,6 +388,55 @@ const AdminDashboard = () => {
       clearInterval(statusRefreshInterval);
     };
   }, []);
+
+  // Automatic status update on admin portal load
+  useEffect(() => {
+    if (user && user.role === 'admin') {
+      handleAutoStatusUpdate();
+    }
+  }, [user]);
+
+  const handleAutoStatusUpdate = async () => {
+    try {
+      setStatusUpdateLoading(true);
+      console.log('🚀 Running automatic status update on admin portal load...');
+      const result = await autoStatusUpdateOnLoad();
+      
+      if (result.success) {
+        console.log('✅ Auto status update completed:', result.message);
+        setLastUpdateTime(new Date());
+      } else {
+        console.warn('⚠️ Auto status update warning:', result.message);
+      }
+    } catch (error) {
+      console.error('❌ Auto status update failed:', error);
+      // Don't show error to user for automatic updates
+    } finally {
+      setStatusUpdateLoading(false);
+    }
+  };
+
+  const handleManualStatusUpdate = async () => {
+    try {
+      setStatusUpdateLoading(true);
+      console.log('🔄 Running manual status update...');
+      const result = await manualStatusUpdate();
+      
+      if (result.success) {
+        alert(`✅ Status update completed!\n${result.message}`);
+        setLastUpdateTime(new Date());
+        // Trigger refresh of dashboard data
+        loadDashboardData();
+      } else {
+        alert(`⚠️ Status update completed with warnings:\n${result.message}`);
+      }
+    } catch (error) {
+      console.error('❌ Manual status update failed:', error);
+      alert(`❌ Status update failed:\n${handleAPIError(error)}`);
+    } finally {
+      setStatusUpdateLoading(false);
+    }
+  };
 
   const loadDashboardData = async () => {
     setLoading(true);
@@ -2352,13 +2407,23 @@ const AdminDashboard = () => {
             </span>
             <button 
               className="btn btn-outline-light btn-sm me-2" 
-              onClick={loadDashboardData}
-              disabled={loading}
-              title="Refresh status data and sync with backend"
+              onClick={handleManualStatusUpdate}
+              disabled={statusUpdateLoading}
+              title={lastUpdateTime ? `Last updated: ${lastUpdateTime.toLocaleTimeString()}` : 'Update all shift statuses'}
             >
-              <i className={`bi bi-arrow-clockwise ${loading ? 'spin' : ''} me-1`}></i>
-              <span className="d-none d-sm-inline">Refresh</span>
-              <span className="d-inline d-sm-none">🔄</span>
+              {statusUpdateLoading ? (
+                <>
+                  <div className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></div>
+                  <span className="d-none d-sm-inline">Updating...</span>
+                  <span className="d-inline d-sm-none">⏳</span>
+                </>
+              ) : (
+                <>
+                  <i className="bi bi-arrow-clockwise me-1"></i>
+                  <span className="d-none d-sm-inline">Update Status</span>
+                  <span className="d-inline d-sm-none">🔄</span>
+                </>
+              )}
             </button>
             <button 
               className="btn btn-outline-light btn-sm" 

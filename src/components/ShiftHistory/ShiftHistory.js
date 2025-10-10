@@ -1,6 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { getShifts, handleAPIError, makeAPICall } from '../../services/appScriptAPI';
+import { 
+  getShifts, 
+  handleAPIError, 
+  makeAPICall, 
+  checkShiftEditHistory, 
+  updateShiftWithEditTracking 
+} from '../../services/appScriptAPI';
 
 const ShiftHistory = () => {
   const { user } = useAuth();
@@ -14,6 +20,8 @@ const ShiftHistory = () => {
     shiftType: 'Regular'
   });
   const [saving, setSaving] = useState(false);
+  const [editHistory, setEditHistory] = useState({}); // Track which shifts have been edited
+  const [checkingEditHistory, setCheckingEditHistory] = useState(false);
 
   useEffect(() => {
     if (user) {
@@ -76,7 +84,25 @@ const ShiftHistory = () => {
     return 0;
   };
 
-  const handleEditShift = (shift) => {
+  const handleEditShift = async (shift) => {
+    // Check if this shift has already been edited (one-time edit limit for employees)
+    if (user && user.role !== 'admin') {
+      setCheckingEditHistory(true);
+      try {
+        const editHistoryResult = await checkShiftEditHistory(shift.shiftId || shift.id);
+        
+        if (editHistoryResult.success && editHistoryResult.data && editHistoryResult.data.hasBeenEdited) {
+          alert('⚠️ Edit Limit Reached\n\nThis shift has already been edited once. Employees can only edit each shift one time.\n\nIf you need to make additional changes, please contact an administrator.');
+          setCheckingEditHistory(false);
+          return;
+        }
+      } catch (error) {
+        console.error('Error checking edit history:', error);
+        // Continue with edit if check fails
+      }
+      setCheckingEditHistory(false);
+    }
+    
     setEditingShift(shift);
     setEditFormData({
       firstStartTime: shift.firstStartTime || shift.startTime || '',
@@ -97,6 +123,13 @@ const ShiftHistory = () => {
   const handleSaveEdit = async () => {
     if (!editingShift || !editFormData.firstStartTime || !editFormData.lastEndTime) {
       alert('Please fill in both start and end times.');
+      return;
+    }
+
+    // Calculate new duration
+    const newDuration = calculateDuration(editFormData.firstStartTime, editFormData.lastEndTime);
+    if (newDuration <= 0) {
+      alert('End time must be after start time.');
       return;
     }
 
@@ -125,8 +158,6 @@ const ShiftHistory = () => {
 
     setSaving(true);
     try {
-      const newDuration = calculateDuration(editFormData.firstStartTime, editFormData.lastEndTime);
-      
       // Create updated segments data
       const updatedSegments = [{
         segmentId: 1,
@@ -135,8 +166,9 @@ const ShiftHistory = () => {
         duration: newDuration
       }];
 
-      const response = await makeAPICall({
-        action: 'createCompleteShift',
+      // Use the new edit tracking system
+      const response = await updateShiftWithEditTracking({
+        shiftId: editingShift.shiftId || editingShift.id,
         employeeName: user.name,
         employeeId: user.id,
         shiftDate: editingShift.shiftDate || editingShift.date,
@@ -147,11 +179,24 @@ const ShiftHistory = () => {
         totalDuration: newDuration,
         isUpdate: true,
         isEmployeeEdit: true, // Flag to indicate this is an employee edit
-        scheduleStatus: 'active'
+        scheduleStatus: 'active',
+        editedBy: user.name,
+        editedById: user.id
       });
 
       if (response.success) {
-        alert('Shift times updated successfully! The shift has been marked as updated.');
+        // Track that this shift has been edited (for one-time limit)
+        setEditHistory(prev => ({
+          ...prev,
+          [editingShift.shiftId || editingShift.id]: true
+        }));
+        
+        const isFirstEdit = user && user.role !== 'admin';
+        const successMessage = isFirstEdit 
+          ? '✅ Shift updated successfully!\n\n⚠️ Note: This shift can no longer be edited. Employees can only edit each shift once.'
+          : '✅ Shift updated successfully!';
+        
+        alert(successMessage);
         handleCancelEdit();
         loadShiftHistory(); // Reload to show updated data
       } else {
@@ -349,12 +394,37 @@ const ShiftHistory = () => {
                       <div className="mt-2">
                         <div className="d-flex gap-1">
                           <button 
-                            className="btn btn-outline-primary btn-sm flex-fill"
+                            className={`btn btn-sm flex-fill ${
+                              editHistory[shift.shiftId || shift.id] || shift._hasBeenEdited
+                                ? 'btn-outline-secondary' 
+                                : 'btn-outline-primary'
+                            }`}
                             onClick={() => handleEditShift(shift)}
-                            title="Edit shift times"
+                            disabled={checkingEditHistory || (user && user.role !== 'admin' && (editHistory[shift.shiftId || shift.id] || shift._hasBeenEdited))}
+                            title={
+                              checkingEditHistory 
+                                ? 'Checking edit permissions...'
+                                : editHistory[shift.shiftId || shift.id] || shift._hasBeenEdited
+                                  ? (user && user.role !== 'admin' ? 'Already edited (limit reached)' : 'Edit shift times (admin)')
+                                  : 'Edit shift times'
+                            }
                           >
-                            <i className="bi bi-pencil me-1"></i>
-                            Edit Times
+                            {checkingEditHistory ? (
+                              <>
+                                <div className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></div>
+                                Checking...
+                              </>
+                            ) : (
+                              <>
+                                <i className="bi bi-pencil me-1"></i>
+                                {(editHistory[shift.shiftId || shift.id] || shift._hasBeenEdited) && 
+                                 user && user.role !== 'admin' ? 'Locked' : 'Edit Times'}
+                                {(editHistory[shift.shiftId || shift.id] || shift._hasBeenEdited) && 
+                                 user && user.role !== 'admin' && (
+                                  <i className="bi bi-lock-fill ms-1" style={{fontSize: '0.8em'}}></i>
+                                )}
+                              </>
+                            )}
                           </button>
                           <button 
                             className="btn btn-outline-info btn-sm flex-fill"
@@ -422,11 +492,32 @@ const ShiftHistory = () => {
                         <td>
                           <div className="d-flex gap-1">
                             <button 
-                              className="btn btn-outline-primary btn-sm"
+                              className={`btn btn-sm ${
+                                editHistory[shift.shiftId || shift.id] || shift._hasBeenEdited
+                                  ? 'btn-outline-secondary' 
+                                  : 'btn-outline-primary'
+                              }`}
                               onClick={() => handleEditShift(shift)}
-                              title="Edit shift times"
+                              disabled={checkingEditHistory || (user && user.role !== 'admin' && (editHistory[shift.shiftId || shift.id] || shift._hasBeenEdited))}
+                              title={
+                                checkingEditHistory 
+                                  ? 'Checking edit permissions...'
+                                  : editHistory[shift.shiftId || shift.id] || shift._hasBeenEdited
+                                    ? (user && user.role !== 'admin' ? 'Already edited (limit reached)' : 'Edit shift times (admin)')
+                                    : 'Edit shift times'
+                              }
                             >
-                              <i className="bi bi-pencil"></i>
+                              {checkingEditHistory ? (
+                                <div className="spinner-border spinner-border-sm" role="status" aria-hidden="true"></div>
+                              ) : (
+                                <>
+                                  <i className="bi bi-pencil"></i>
+                                  {(editHistory[shift.shiftId || shift.id] || shift._hasBeenEdited) && 
+                                   user && user.role !== 'admin' && (
+                                    <i className="bi bi-lock-fill ms-1 text-muted" style={{fontSize: '0.7em'}}></i>
+                                  )}
+                                </>
+                              )}
                             </button>
                             <button 
                               className="btn btn-outline-info btn-sm"
