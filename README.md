@@ -68,6 +68,17 @@ A comprehensive, AI-powered workforce management system with real-time shift tra
 5. **Access the application**
    Open [http://localhost:3000](http://localhost:3000) in your browser
 
+### Production Deployment
+
+**Deploy to Render (Recommended):**
+1. Fork this repository to your GitHub account
+2. Sign up at [render.com](https://render.com)
+3. Create a new Static Site from your GitHub repository
+4. Use branch `main` with build command `npm install && npm run build`
+5. Set publish directory to `build`
+
+For detailed deployment instructions, see [DEPLOYMENT.md](DEPLOYMENT.md)
+
 ## 📱 Usage
 
 ### For Employees
