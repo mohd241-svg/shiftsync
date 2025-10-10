@@ -8739,10 +8739,65 @@ function generateRealAIResponse(prompt, data) {
   
   // Analyze the prompt to determine what analysis to perform
   const promptLower = prompt.toLowerCase();
-  let response = "🤖 AI Analysis - Real Data Insights:\n\n";
+  let response = "🤖 AI Analysis - Real Data Analysis:\n\n";
+  
+  // REAL DATA ANALYSIS - Who is doing less work / lowest performer
+  if (promptLower.includes('less work') || promptLower.includes('least work') || promptLower.includes('lowest performer') || promptLower.includes('worst employee') || promptLower.includes('underperformer') || promptLower.includes('who is doing less')) {
+    const employeeAnalysis = analyzeEmployeePerformance(data);
+    const employees = employeeAnalysis.allEmployees;
+    
+    if (employees.length > 0) {
+      // Sort by total hours (ascending) to find who's doing less work
+      const workloadRanking = [...employees].sort((a, b) => a.totalHours - b.totalHours);
+      const leastWorker = workloadRanking[0];
+      
+      response += `📉 WORKLOAD ANALYSIS - Who Is Doing Less Work:\n\n`;
+      response += `🔴 EMPLOYEE DOING LEAST WORK:\n`;
+      response += `• Name: ${leastWorker.name}\n`;
+      response += `• Total Hours Worked: ${leastWorker.totalHours.toFixed(1)} hours\n`;
+      response += `• Number of Shifts: ${leastWorker.totalShifts}\n`;
+      response += `• Average Shift Duration: ${leastWorker.avgDuration.toFixed(1)} hours\n`;
+      response += `• Completion Rate: ${leastWorker.completionRate.toFixed(1)}%\n`;
+      response += `• Performance Score: ${leastWorker.score}/100\n\n`;
+      
+      response += `📊 FULL WORKLOAD RANKING (Lowest to Highest):\n`;
+      workloadRanking.forEach((emp, index) => {
+        const indicator = index === 0 ? '🔴' : index === workloadRanking.length - 1 ? '🟢' : '🟡';
+        response += `${index + 1}. ${indicator} ${emp.name}: ${emp.totalHours.toFixed(1)}h (${emp.totalShifts} shifts)\n`;
+      });
+      response += '\n';
+      
+      // Compare with highest worker
+      if (workloadRanking.length > 1) {
+        const mostWorker = workloadRanking[workloadRanking.length - 1];
+        const hoursDifference = mostWorker.totalHours - leastWorker.totalHours;
+        const percentageDifference = ((hoursDifference / mostWorker.totalHours) * 100).toFixed(1);
+        
+        response += `📈 WORKLOAD COMPARISON:\n`;
+        response += `• ${leastWorker.name} works ${hoursDifference.toFixed(1)} hours less than ${mostWorker.name}\n`;
+        response += `• That's ${percentageDifference}% less workload\n`;
+        response += `• Shift count difference: ${mostWorker.totalShifts - leastWorker.totalShifts} shifts\n\n`;
+      }
+      
+      // Recommendations for the underperformer
+      response += `💡 RECOMMENDATIONS FOR ${leastWorker.name.toUpperCase()}:\n`;
+      if (leastWorker.totalHours < 20) {
+        response += `• Consider increasing shift frequency\n`;
+      }
+      if (leastWorker.completionRate < 80) {
+        response += `• Focus on completing started shifts\n`;
+      }
+      if (leastWorker.avgDuration < 6) {
+        response += `• Consider longer shift durations for better productivity\n`;
+      }
+      response += `• Monitor performance and provide additional training if needed\n\n`;
+    } else {
+      response += `❌ No employee data available for workload analysis.\n\n`;
+    }
+  }
   
   // REAL DATA ANALYSIS - Best Employee Detection
-  if (promptLower.includes('best employee') || promptLower.includes('top performer') || promptLower.includes('who is the best')) {
+  else if (promptLower.includes('best employee') || promptLower.includes('top performer') || promptLower.includes('who is the best')) {
     const employeeAnalysis = analyzeEmployeePerformance(data);
     response += `� BEST EMPLOYEE ANALYSIS:\n`;
     response += `• Best Overall Performer: ${employeeAnalysis.bestEmployee.name}\n`;
@@ -8761,7 +8816,7 @@ function generateRealAIResponse(prompt, data) {
   }
   
   // REAL DATA ANALYSIS - Productivity Insights
-  if (promptLower.includes('productivity') || promptLower.includes('performance')) {
+  else if (promptLower.includes('productivity') || promptLower.includes('performance')) {
     const productivityStats = calculateProductivityStats(data);
     response += `� PRODUCTIVITY INSIGHTS:\n`;
     response += `• Total Productive Hours: ${productivityStats.totalHours} hours\n`;
@@ -8773,7 +8828,7 @@ function generateRealAIResponse(prompt, data) {
   }
   
   // REAL DATA ANALYSIS - Pattern Detection
-  if (promptLower.includes('pattern') || promptLower.includes('trend')) {
+  else if (promptLower.includes('pattern') || promptLower.includes('trend')) {
     const patterns = detectRealPatterns(data);
     response += `📈 PATTERN ANALYSIS:\n`;
     response += `• Peak Hours: ${patterns.peakHours}\n`;
@@ -8783,13 +8838,36 @@ function generateRealAIResponse(prompt, data) {
   }
   
   // REAL DATA ANALYSIS - Department Insights
-  if (promptLower.includes('department') || promptLower.includes('workload')) {
+  else if (promptLower.includes('department') || promptLower.includes('workload')) {
     const deptAnalysis = analyzeDepartments(data);
     response += `🏢 DEPARTMENT ANALYSIS:\n`;
     deptAnalysis.forEach(dept => {
       response += `• ${dept.name}: ${dept.totalHours}h (${dept.employeeCount} employees, ${dept.avgHours}h avg)\n`;
     });
     response += '\n';
+  }
+  
+  // Generic analysis if no specific query matched
+  else {
+    const employeeAnalysis = analyzeEmployeePerformance(data);
+    response += `📊 GENERAL WORKFORCE ANALYSIS:\n`;
+    response += `• Total Employees: ${employeeAnalysis.allEmployees.length}\n`;
+    
+    if (employeeAnalysis.allEmployees.length > 0) {
+      const avgScore = (employeeAnalysis.allEmployees.reduce((sum, emp) => sum + emp.score, 0) / employeeAnalysis.allEmployees.length).toFixed(1);
+      const totalHours = employeeAnalysis.allEmployees.reduce((sum, emp) => sum + emp.totalHours, 0).toFixed(1);
+      const avgCompletionRate = (employeeAnalysis.allEmployees.reduce((sum, emp) => sum + emp.completionRate, 0) / employeeAnalysis.allEmployees.length).toFixed(1);
+      
+      response += `• Average Performance Score: ${avgScore}/100\n`;
+      response += `• Total Hours Tracked: ${totalHours} hours\n`;
+      response += `• Overall Completion Rate: ${avgCompletionRate}%\n\n`;
+      
+      // Show top and bottom performers
+      const workloadRanking = [...employeeAnalysis.allEmployees].sort((a, b) => a.totalHours - b.totalHours);
+      response += `📈 QUICK PERFORMANCE OVERVIEW:\n`;
+      response += `• Highest Performer: ${workloadRanking[workloadRanking.length - 1].name} (${workloadRanking[workloadRanking.length - 1].totalHours.toFixed(1)}h)\n`;
+      response += `• Lowest Performer: ${workloadRanking[0].name} (${workloadRanking[0].totalHours.toFixed(1)}h)\n\n`;
+    }
   }
   
   // Add real insights based on actual data

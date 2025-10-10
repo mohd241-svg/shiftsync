@@ -54,7 +54,6 @@ const AdminDashboard = () => {
 
   // AI Features states
   const [customPrompt, setCustomPrompt] = useState('');
-  const [showCustomPromptModal, setShowCustomPromptModal] = useState(false);
   const [aiResponse, setAiResponse] = useState('');
   const [lastAnalysis, setLastAnalysis] = useState(null);
   const [aiLoading, setAiLoading] = useState(false);
@@ -3433,103 +3432,6 @@ const AdminDashboard = () => {
                   disabled={loading}
                 >
                   {loading ? 'Saving...' : 'Save Changes'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-      
-      {/* Custom AI Prompt Modal */}
-      {showCustomPromptModal && (
-        <div className="modal show d-block" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
-          <div className="modal-dialog modal-lg">
-            <div className="modal-content">
-              <div className="modal-header">
-                <h5 className="modal-title">🤖 Custom AI Analysis</h5>
-                <button 
-                  type="button" 
-                  className="btn-close" 
-                  onClick={() => setShowCustomPromptModal(false)}
-                ></button>
-              </div>
-              <div className="modal-body">
-                <div className="mb-3">
-                  <label className="form-label">Enter your question or prompt:</label>
-                  <textarea
-                    className="form-control"
-                    rows="4"
-                    value={customPrompt}
-                    onChange={(e) => setCustomPrompt(e.target.value)}
-                    placeholder="Examples:&#10;• How is my staff performance?&#10;• What are the overtime patterns?&#10;• Analyze shift productivity by department&#10;• Show me scheduling trends&#10;• What improvements can I make?"
-                  />
-                  <small className="text-muted">
-                    Ask questions about staff performance, shift patterns, overtime, departments, or any other workforce insights.
-                  </small>
-                </div>
-                
-                {aiResponse && (
-                  <div className="alert alert-info">
-                    <h6 className="alert-heading">🤖 AI Response:</h6>
-                    <p className="mb-2">{aiResponse}</p>
-                    {lastAnalysis && (
-                      <div className="mt-2">
-                        <small className="text-muted">
-                          <strong>Confidence:</strong> {lastAnalysis.confidence}% | 
-                          <strong> Processing Time:</strong> {lastAnalysis.processingTime}ms | 
-                          <strong> Data Sources:</strong> {lastAnalysis.dataSource}
-                        </small>
-                      </div>
-                    )}
-                  </div>
-                )}
-                
-                <div className="alert alert-light">
-                  <h6 className="alert-heading">💡 Example Prompts:</h6>
-                  <ul className="mb-0 small">
-                    <li><strong>"How is staff productivity?"</strong> - Get performance metrics and insights</li>
-                    <li><strong>"Show me overtime patterns"</strong> - Analyze overtime trends and recommendations</li>
-                    <li><strong>"What are the busiest days?"</strong> - Discover shift pattern insights</li>
-                    <li><strong>"How can I improve scheduling?"</strong> - Get optimization suggestions</li>
-                    <li><strong>"Analyze department workload"</strong> - Compare department metrics</li>
-                  </ul>
-                </div>
-              </div>
-              <div className="modal-footer">
-                <button 
-                  type="button" 
-                  className="btn btn-secondary" 
-                  onClick={() => setShowCustomPromptModal(false)}
-                >
-                  Close
-                </button>
-                {aiResponse && lastAnalysis && (
-                  <button 
-                    type="button" 
-                    className="btn btn-outline-success"
-                    onClick={handleDownloadAIReport}
-                  >
-                    <i className="bi bi-download me-2"></i>
-                    Download Report
-                  </button>
-                )}
-                <button 
-                  type="button" 
-                  className="btn btn-primary"
-                  onClick={handleEnhancedAIAnalysis}
-                  disabled={aiLoading || !customPrompt.trim()}
-                >
-                  {aiLoading ? (
-                    <>
-                      <span className="spinner-border spinner-border-sm me-2" />
-                      Processing with Data...
-                    </>
-                  ) : (
-                    <>
-                      <i className="bi bi-database me-2"></i>
-                      Enhanced AI Analysis
-                    </>
-                  )}
                 </button>
               </div>
             </div>
