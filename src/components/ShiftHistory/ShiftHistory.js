@@ -3,12 +3,13 @@ import { useAuth } from '../../contexts/AuthContext';
 import { 
   getShifts, 
   handleAPIError, 
-  makeAPICall, 
   checkShiftEditHistory, 
-  updateShiftWithEditTracking 
+  updateShiftWithEditTracking,
+  submitTimeSegments 
 } from '../../services/appScriptAPI';
+import TimeSegmentEntry from '../TimeSegmentEntry/TimeSegmentEntry';
 
-const ShiftHistory = () => {
+const ShiftHistory = ({ refreshTrigger }) => {
   const { user } = useAuth();
   const [shifts, setShifts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -22,34 +23,252 @@ const ShiftHistory = () => {
   const [saving, setSaving] = useState(false);
   const [editHistory, setEditHistory] = useState({}); // Track which shifts have been edited
   const [checkingEditHistory, setCheckingEditHistory] = useState(false);
+  const [showAdvancedEdit, setShowAdvancedEdit] = useState(false); // For TimeSegmentEntry reveal
+  const [message, setMessage] = useState(''); // Added message state like ShiftEntry
+
+  // 🔥 EXACT COPY OF SHIFT ENTRY'S SMART STATUS LOGIC
+  const determineSmartStatus = (shiftData) => {
+    console.log('🧮 ShiftHistory - Calculating smart status (EXACT SHIFT ENTRY LOGIC):', shiftData);
+    
+    if (!shiftData || !shiftData.segments) {
+      console.log('📝 No shift data or segments - DRAFT');
+      return 'DRAFT';
+    }
+    
+    const segments = shiftData.segments;
+    const now = new Date();
+    const currentTime = now.toLocaleTimeString('en-US', { 
+      hour12: false, 
+      hour: '2-digit', 
+      minute: '2-digit' 
+    });
+    
+    console.log('⏰ Current time:', currentTime);
+    console.log('📋 Segments:', segments);
+
+    if (!Array.isArray(segments) || segments.length === 0) {
+      console.log('📝 No segments array - DRAFT');
+      return 'DRAFT';
+    }
+
+    const timeToMinutes = (timeString) => {
+      if (!timeString) return 0;
+      const [hours, minutes] = timeString.split(':').map(Number);
+      return (hours || 0) * 60 + (minutes || 0);
+    };
+
+    const currentTimeMinutes = timeToMinutes(currentTime);
+    
+    // Get the actual start and end times from segments
+    const firstSegment = segments[0];
+    const lastSegment = segments[segments.length - 1];
+    
+    if (firstSegment && firstSegment.startTime) {
+      const firstStartMinutes = timeToMinutes(firstSegment.startTime);
+      console.log('🚀 First start time:', firstSegment.startTime, '=', firstStartMinutes, 'minutes');
+      
+      // Check if shift hasn't started yet
+      if (currentTimeMinutes < firstStartMinutes) {
+        console.log('⚫ Before start time - OFFLINE');
+        return 'OFFLINE';
+      }
+    }
+
+    // Check for active segments (segments without end time)
+    const hasActiveSegment = segments.some(seg => !seg.endTime);
+    console.log('🔄 Has active segment (no end time):', hasActiveSegment);
+    
+    if (hasActiveSegment) {
+      console.log('🟢 Active segment detected - ACTIVE');
+      return 'ACTIVE';
+    }
+
+    // Check if current time is before the last segment's end time
+    if (lastSegment && lastSegment.endTime) {
+      const lastEndMinutes = timeToMinutes(lastSegment.endTime);
+      console.log('🏁 Last end time:', lastSegment.endTime, '=', lastEndMinutes, 'minutes');
+      console.log('⏰ Comparison: current', currentTimeMinutes, 'vs end', lastEndMinutes);
+      
+      if (currentTimeMinutes < lastEndMinutes) {
+        console.log('🟢 Current time before end time - should be ACTIVE');
+        return 'ACTIVE';
+      } else {
+        console.log('🔵 Current time after end time - COMPLETED');
+        return 'COMPLETED';
+      }
+    }
+
+    // If all segments have end times but no clear end time, likely still active
+    if (segments.length > 0 && segments.every(seg => seg.endTime)) {
+      console.log('🟡 All segments have end times but unclear - ACTIVE for safety');
+      return 'ACTIVE'; // Keep as active for manual completion
+    }
+
+    console.log('📝 Fallback to DRAFT');
+    return 'DRAFT';
+  };
 
   useEffect(() => {
     if (user) {
-      loadShiftHistory();
+      console.log('🔄 ShiftHistory initial load - EXACT SHIFT ENTRY PATTERN');
+      loadShiftHistory(true); // Always force fresh on load like ShiftEntry
     }
   }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const loadShiftHistory = async () => {
+  // Trigger refresh when refreshTrigger changes (EXACT SHIFT ENTRY PATTERN)
+  useEffect(() => {
+    if (refreshTrigger && user) {
+      console.log('🔄 History refresh trigger activated - EXACT SHIFT ENTRY PATTERN - fetching FRESH data from Google Sheets');
+      loadShiftHistory(true); // Force fresh data from sheet like ShiftEntry
+    }
+  }, [refreshTrigger, user]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Listen for console debug refresh events (EXACT SHIFT ENTRY PATTERN)
+  useEffect(() => {
+    const handleConsoleRefresh = (event) => {
+      if (user) {
+        console.log('🔧 Console debug refresh triggered for ShiftHistory (SHIFT ENTRY PATTERN):', event.detail);
+        setMessage('🔧 Console debug triggered - reloading data...');
+        loadShiftHistory(true); // Force fresh data from Google Sheets like ShiftEntry
+      }
+    };
+
+    window.addEventListener('forceShiftRefresh', handleConsoleRefresh);
+    
+    return () => {
+      window.removeEventListener('forceShiftRefresh', handleConsoleRefresh);
+    };
+  }, [user]);
+
+  // Debug: Log shift data to understand the structure
+  useEffect(() => {
+    if (shifts.length > 0) {
+      console.log('🔍 Shift data structure debug:', shifts[0]);
+      
+      // Load edit history for all shifts on component mount
+      loadEditHistoryForAllShifts();
+      
+      // Debug: Check edit status for each shift
+      shifts.forEach((shift, index) => {
+        const shiftId = shift.shiftId || shift.id;
+        const isEdited = editHistory[shiftId] || shift._hasBeenEdited || shift.hasBeenEdited;
+        
+        console.log(`🔍 Shift ${index + 1} (${shiftId}) edit status:`, {
+          'editHistory[shiftId]': editHistory[shiftId],
+          '_hasBeenEdited': shift._hasBeenEdited,
+          'hasBeenEdited': shift.hasBeenEdited,
+          'isEdited': isEdited,
+          'lastUpdated': shift.lastUpdated
+        });
+        
+        const duration = shift.totalDuration || shift.totalHours || shift['Total Duration'] || shift['Total Hours'];
+        if (!duration || duration === 0) {
+          console.log(`⚠️ Shift ${index + 1} missing duration:`, {
+            date: shift.date || shift.shiftDate,
+            startTime: shift.firstStartTime || shift.startTime,
+            endTime: shift.lastEndTime || shift.endTime,
+            totalDuration: shift.totalDuration,
+            totalHours: shift.totalHours,
+            'Total Duration': shift['Total Duration'],
+            'Total Hours': shift['Total Hours'],
+            calculated: shift.firstStartTime && shift.lastEndTime ? calculateDuration(shift.firstStartTime, shift.lastEndTime) : 'N/A'
+          });
+        }
+      });
+    }
+  }, [shifts, editHistory]); // Added editHistory as dependency
+
+  // Load edit history for all shifts to maintain lock status after refresh
+  const loadEditHistoryForAllShifts = async () => {
+    if (!shifts.length) return;
+    
+    console.log('🔄 Loading edit history for all shifts...');
+    const newEditHistory = {};
+    
+    // Check edit history for each shift
+    for (const shift of shifts) {
+      const shiftId = shift.shiftId || shift.id;
+      if (shiftId) {
+        try {
+          const editHistoryResult = await checkShiftEditHistory(shiftId);
+          if (editHistoryResult.success && editHistoryResult.data && editHistoryResult.data.hasBeenEdited) {
+            newEditHistory[shiftId] = true;
+            console.log(`🔒 Shift ${shiftId} marked as edited`);
+          }
+        } catch (error) {
+          console.error(`Error checking edit history for shift ${shiftId}:`, error);
+        }
+      }
+    }
+    
+    // Update the edit history state
+    setEditHistory(newEditHistory);
+    console.log('✅ Edit history loaded:', newEditHistory);
+  };
+
+  const loadShiftHistory = async (forceFresh = false) => {
     setLoading(true);
     setError('');
     
     try {
-      // First try to get shifts using the getShifts API
+      console.log(`🔄 Loading shift history - EXACTLY LIKE SHIFT ENTRY - forceFresh: ${forceFresh}`);
+      
+      // 🔥 REPLICATE SHIFT ENTRY PATTERN: Always use forceRefresh for fresh data
       const response = await getShifts({
-        employeeId: user.id
-        // You can add date filters here if needed:
-        // startDate: '2024-01-01',
-        // endDate: '2024-12-31'
+        employeeId: user.id,
+        forceRefresh: true, // Always force refresh like ShiftEntry
+        forceFresh: true    // Always force fresh like ShiftEntry
       });
 
       if (response.success && response.data) {
+        console.log('📋 SHIFT HISTORY - EXACT SHIFT ENTRY PATTERN - Pure sheet data received:', JSON.stringify(response.data, null, 2));
+        
         // Handle both array and single object responses
         const shiftsData = Array.isArray(response.data) ? response.data : [response.data];
-        setShifts(shiftsData);
+        
+        // 🔥 REPLICATE SHIFT ENTRY SMART STATUS LOGIC for each shift
+        const processedShifts = shiftsData.map((shift, index) => {
+          if (!shift || !shift.segments) return shift;
+          
+          const sheetStatus = shift.status;
+          const calculatedStatus = determineSmartStatus(shift); // Use same logic as ShiftEntry
+          
+          console.log(`📋 SHIFT ${index + 1} STATUS COMPARISON: Sheet="${sheetStatus}" vs Calculated="${calculatedStatus}"`);
+          
+          // Mark shifts that need status correction (like ShiftEntry does)
+          if (sheetStatus !== calculatedStatus) {
+            console.log(`🔄 SHIFT ${index + 1} STATUS MISMATCH: ${sheetStatus} → ${calculatedStatus}`);
+            return {
+              ...shift,
+              status: calculatedStatus, // Use calculated status like ShiftEntry
+              _statusCorrected: true,
+              _originalBackendStatus: sheetStatus,
+              _freshFromSheet: true
+            };
+          }
+          
+          return { ...shift, _freshFromSheet: true };
+        });
+        
+        // Log each shift's key data points (exactly like ShiftEntry)
+        processedShifts.forEach((shift, index) => {
+          console.log(`📋 SHIFT ${index + 1} DATA (SHIFT ENTRY PATTERN):`, {
+            shiftId: shift.shiftId,
+            status: shift.status,
+            totalDuration: shift.totalDuration,
+            totalHours: shift.totalHours,
+            lastEndTime: shift.lastEndTime,
+            segments: shift.segments ? shift.segments.length : 0,
+            _freshFromSheet: shift._freshFromSheet,
+            _statusCorrected: shift._statusCorrected
+          });
+        });
+        
+        setShifts(processedShifts);
+        setMessage('✅ Shift history loaded with fresh Google Sheets data (ShiftEntry pattern)');
       } else if (response.message && response.message.includes('Invalid action')) {
-        // If getShifts is not implemented in backend, show helpful message
         setError('Shift history feature is being set up. The getShifts action needs to be added to your Google Apps Script backend.');
-        setShifts([]); // Set empty array to show the "no records" message
+        setShifts([]);
       } else {
         setError(response.message || 'Failed to load shift history');
       }
@@ -74,14 +293,70 @@ const ShiftHistory = () => {
   const calculateDuration = (startTime, endTime) => {
     if (!startTime || !endTime) return 0;
     
-    const start = new Date(`1970-01-01T${startTime}:00`);
-    const end = new Date(`1970-01-01T${endTime}:00`);
-    const diffMs = end - start;
-    
-    if (diffMs > 0) {
-      return Math.round((diffMs / (1000 * 60 * 60)) * 100) / 100;
+    try {
+      const start = new Date(`1970-01-01T${startTime}:00`);
+      const end = new Date(`1970-01-01T${endTime}:00`);
+      let diffMs = end - start;
+      
+      // Handle overnight shifts
+      if (diffMs < 0) {
+        diffMs += 24 * 60 * 60 * 1000;
+      }
+      
+      const hours = diffMs / (1000 * 60 * 60);
+      return Math.round(hours * 100) / 100;
+    } catch (error) {
+      console.error('Error calculating duration:', error);
+      return 0;
     }
-    return 0;
+  };
+
+  // 🔧 Calculate real-time end time and duration from segments
+  const calculateRealTimeDataFromSegments = (shift) => {
+    if (!shift.timeSegments && !shift.segments) {
+      return {
+        realEndTime: shift.lastEndTime || shift.endTime,
+        realTotalDuration: shift.totalDuration || 0
+      };
+    }
+
+    // Parse segments from either timeSegments or segments field
+    let segments = shift.timeSegments || shift.segments;
+    if (typeof segments === 'string') {
+      try {
+        segments = JSON.parse(segments);
+      } catch (error) {
+        console.error('Error parsing segments:', error);
+        return {
+          realEndTime: shift.lastEndTime || shift.endTime,
+          realTotalDuration: shift.totalDuration || 0
+        };
+      }
+    }
+
+    if (!segments || segments.length === 0) {
+      return {
+        realEndTime: shift.lastEndTime || shift.endTime,
+        realTotalDuration: shift.totalDuration || 0
+      };
+    }
+
+    // Calculate real end time from last segment
+    const lastSegment = segments[segments.length - 1];
+    const realEndTime = lastSegment?.endTime || shift.lastEndTime || shift.endTime;
+
+    // Calculate total duration from all segments
+    const realTotalDuration = segments.reduce((total, segment) => {
+      if (segment.startTime && segment.endTime) {
+        const segmentDuration = calculateDuration(segment.startTime, segment.endTime);
+        return total + segmentDuration;
+      }
+      return total + (segment.duration || 0);
+    }, 0);
+
+    console.log(`🔍 Real-time calculation for shift: endTime=${realEndTime}, totalDuration=${realTotalDuration.toFixed(2)}`);
+
+    return { realEndTime, realTotalDuration };
   };
 
   const handleEditShift = async (shift) => {
@@ -104,10 +379,74 @@ const ShiftHistory = () => {
     }
     
     setEditingShift(shift);
+    
+    // Debug: Log the shift data to see what properties are available
+    console.log('🔍 Edit shift data:', shift);
+    console.log('📝 Available time properties:', {
+      firstStartTime: shift.firstStartTime,
+      startTime: shift.startTime,
+      'Start Time': shift['Start Time'],
+      lastEndTime: shift.lastEndTime,
+      endTime: shift.endTime,
+      'End Time': shift['End Time']
+    });
+    
+    // Helper function to extract HH:MM from various time formats
+    const extractTime = (timeValue) => {
+      if (!timeValue) return '';
+      
+      // If it's already in HH:MM format, return as-is
+      if (typeof timeValue === 'string' && /^\d{2}:\d{2}$/.test(timeValue)) {
+        return timeValue;
+      }
+      
+      // If it's an ISO date string, extract the time part
+      if (typeof timeValue === 'string' && timeValue.includes('T')) {
+        const date = new Date(timeValue);
+        return date.toLocaleTimeString('en-US', { 
+          hour12: false, 
+          hour: '2-digit', 
+          minute: '2-digit',
+          timeZone: 'Asia/Calcutta' // Match your timezone
+        });
+      }
+      
+      // If it's a Date object, format it
+      if (timeValue instanceof Date) {
+        return timeValue.toLocaleTimeString('en-US', { 
+          hour12: false, 
+          hour: '2-digit', 
+          minute: '2-digit',
+          timeZone: 'Asia/Calcutta'
+        });
+      }
+      
+      return '';
+    };
+    
+    // Try to get times from segments first if main times are problematic
+    let startTime = '';
+    let endTime = '';
+    
+    if (shift.segments && shift.segments.length > 0) {
+      // Use the first segment's start time and last segment's end time
+      const firstSegment = shift.segments[0];
+      const lastSegment = shift.segments[shift.segments.length - 1];
+      
+      startTime = firstSegment.startTime || extractTime(shift.firstStartTime || shift.startTime || shift['Start Time']);
+      endTime = lastSegment.endTime || extractTime(shift.lastEndTime || shift.endTime || shift['End Time']);
+    } else {
+      // Fallback to main shift times
+      startTime = extractTime(shift.firstStartTime || shift.startTime || shift['Start Time']);
+      endTime = extractTime(shift.lastEndTime || shift.endTime || shift['End Time']);
+    }
+    
+    console.log('🕐 Extracted times:', { startTime, endTime });
+    
     setEditFormData({
-      firstStartTime: shift.firstStartTime || shift.startTime || '',
-      lastEndTime: shift.lastEndTime || shift.endTime || '',
-      shiftType: shift.shiftType || 'Regular'
+      firstStartTime: startTime,
+      lastEndTime: endTime,
+      shiftType: shift.shiftType || shift['Shift Type'] || 'Regular'
     });
   };
 
@@ -158,7 +497,7 @@ const ShiftHistory = () => {
 
     setSaving(true);
     try {
-      // Create updated segments data
+      // Create updated segments data (EXACT SHIFT ENTRY PATTERN)
       const updatedSegments = [{
         segmentId: 1,
         startTime: editFormData.firstStartTime,
@@ -166,25 +505,42 @@ const ShiftHistory = () => {
         duration: newDuration
       }];
 
-      // Use the new edit tracking system
+      // 🔥 CALCULATE SMART STATUS (EXACT SHIFT ENTRY PATTERN)
+      const mockShiftData = {
+        segments: updatedSegments,
+        status: 'ACTIVE'
+      };
+      const calculatedStatus = determineSmartStatus(mockShiftData);
+      
+      console.log(`📊 History Regular Edit - Smart status calculated: ${calculatedStatus}`);
+
+      // Use the edit tracking system with EXACT SHIFT ENTRY COLUMN UPDATES
       const response = await updateShiftWithEditTracking({
         shiftId: editingShift.shiftId || editingShift.id,
         employeeName: user.name,
         employeeId: user.id,
         shiftDate: editingShift.shiftDate || editingShift.date,
         shiftType: editFormData.shiftType,
-        segments: updatedSegments,
-        firstStartTime: editFormData.firstStartTime,
-        lastEndTime: editFormData.lastEndTime,
-        totalDuration: newDuration,
+        segments: updatedSegments, // Column I & J update
+        firstStartTime: editFormData.firstStartTime, // Column F update
+        lastEndTime: editFormData.lastEndTime, // Column G update
+        totalDuration: newDuration, // Column H update
+        scheduleStatus: calculatedStatus, // Column K update (EXACT SHIFT ENTRY LOGIC)
         isUpdate: true,
-        isEmployeeEdit: true, // Flag to indicate this is an employee edit
-        scheduleStatus: 'active',
+        isEmployeeEdit: true,
         editedBy: user.name,
         editedById: user.id
       });
 
       if (response.success) {
+        setMessage('✅ Shift updated successfully in Google Sheets!');
+        
+        // � Force fresh data reload (EXACT SHIFT ENTRY PATTERN)
+        console.log('🔄 Forcing fresh data reload after regular edit (SHIFT ENTRY PATTERN)...');
+        setTimeout(() => {
+          loadShiftHistory(true); // Always force fresh like ShiftEntry
+        }, 1000); // Small delay to ensure backend processing is complete
+        
         // Track that this shift has been edited (for one-time limit)
         setEditHistory(prev => ({
           ...prev,
@@ -205,6 +561,80 @@ const ShiftHistory = () => {
     } catch (error) {
       console.error('Failed to update shift:', error);
       alert('Error updating shift: ' + handleAPIError(error));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Handle advanced time segment editing - EXACT SHIFT ENTRY PATTERN
+  const handleAdvancedEdit = async (segments, scheduleInfo = {}) => {
+    if (!editingShift) return;
+    
+    setSaving(true);
+    setMessage(''); // Clear message like ShiftEntry
+    
+    if (!user || !user.name || !user.id) {
+      setMessage('Error: User information not available.');
+      setSaving(false);
+      return;
+    }
+
+    try {
+      const payload = {
+        segments,
+        employeeName: editingShift.employeeName || editingShift.name,
+        employeeId: editingShift.employeeId || editingShift.id,
+        date: editingShift.shiftDate || editingShift.date,
+        shiftType: editingShift.shiftType || 'Regular',
+        ...scheduleInfo
+      };
+      
+      // 🔥 CRITICAL: Pass existing shift ID if available for proper segment updates (EXACT SHIFT ENTRY LOGIC)
+      if (editingShift && (editingShift.shiftId || editingShift.id)) {
+        payload.existingShiftId = editingShift.shiftId || editingShift.id;
+        payload.isUpdate = true;
+        console.log(`� Using existing shift ID: ${editingShift.shiftId || editingShift.id} for segment update (SHIFT ENTRY PATTERN)`);
+      } else {
+        console.log('🆕 Creating new shift (no existing shift ID) - SHIFT ENTRY PATTERN');
+      }
+      
+      console.log('📤 ShiftHistory submitting segments with payload (SHIFT ENTRY PATTERN):', payload);
+      
+      const response = await submitTimeSegments(payload);
+
+      if (response.success) {
+        setMessage('✅ Time segments updated successfully in Google Sheets!');
+        
+        // � Force fresh data reload to show updated segments (EXACT SHIFT ENTRY PATTERN)
+        console.log('🔄 Forcing fresh data reload after segment update (SHIFT ENTRY PATTERN)...');
+        setTimeout(() => {
+          loadShiftHistory(true); // Always force fresh like ShiftEntry
+        }, 1000); // Small delay to ensure backend processing is complete
+        
+        // Update edit history
+        setEditHistory(prev => ({
+          ...prev,
+          [editingShift.shiftId || editingShift.id]: true
+        }));
+        
+        const isFirstEdit = user && user.role !== 'admin';
+        const successMessage = isFirstEdit 
+          ? '✅ Time segments updated successfully in Google Sheets!\n\n⚠️ Note: This shift can no longer be edited. Employees can only edit each shift once.'
+          : '✅ Time segments updated successfully in Google Sheets!';
+        
+        alert(successMessage);
+        handleCancelEdit();
+        setShowAdvancedEdit(false);
+        
+        console.log('🎯 SHIFT ENTRY PATTERN COMPLETE: UI now shows fresh sheet data');
+      } else {
+        setMessage('❌ Error: ' + response.message);
+        alert('Error updating time segments: ' + response.message);
+      }
+    } catch (error) {
+      setMessage('❌ Error: ' + handleAPIError(error));
+      console.error('Failed to update time segments:', error);
+      alert('Error updating time segments: ' + handleAPIError(error));
     } finally {
       setSaving(false);
     }
@@ -309,7 +739,7 @@ const ShiftHistory = () => {
             </div>
             <button 
               className="btn btn-outline-primary btn-sm"
-              onClick={loadShiftHistory}
+              onClick={() => loadShiftHistory(true)} // Force fresh data from Google Sheets
               disabled={loading}
             >
               {loading ? (
@@ -325,6 +755,19 @@ const ShiftHistory = () => {
               )}
             </button>
           </div>
+
+          {/* Message display like ShiftEntry */}
+          {message && (
+            <div className={`alert ${message.includes('✅') ? 'alert-success' : message.includes('❌') ? 'alert-danger' : 'alert-info'} alert-dismissible fade show`} role="alert">
+              {message}
+              <button 
+                type="button" 
+                className="btn-close" 
+                onClick={() => setMessage('')}
+                aria-label="Close"
+              ></button>
+            </div>
+          )}
 
           {error && (
             <div className="alert alert-danger alert-dismissible fade show" role="alert">
@@ -346,7 +789,11 @@ const ShiftHistory = () => {
             <>
               {/* Mobile Card View */}
               <div className="d-block d-md-none">
-                {shifts.map((shift, index) => (
+                {shifts.map((shift, index) => {
+                  // 🔧 Calculate real-time data for each shift
+                  const { realEndTime, realTotalDuration } = calculateRealTimeDataFromSegments(shift);
+                  
+                  return (
                   <div key={shift.id || index} className="card mb-3 border-start border-primary border-3">
                     <div className="card-body p-3">
                       <div className="d-flex justify-content-between align-items-start mb-2">
@@ -368,16 +815,33 @@ const ShiftHistory = () => {
                       </div>
                       <div className="row g-2 text-sm">
                         <div className="col-6">
+                          <small className="text-muted d-block">Shift ID</small>
+                          <span style={{fontSize: '0.8rem', fontFamily: 'monospace'}}>{shift.shiftId || shift.id || 'N/A'}</span>
+                        </div>
+                        <div className="col-6">
+                          <small className="text-muted d-block">Date</small>
+                          <span>{formatDate(shift.shiftDate || shift.date)}</span>
+                        </div>
+                        <div className="col-6">
                           <small className="text-muted d-block">Start Time</small>
                           <span>{formatTime(shift.firstStartTime || shift.startTime)}</span>
                         </div>
                         <div className="col-6">
                           <small className="text-muted d-block">End Time</small>
-                          <span>{formatTime(shift.lastEndTime || shift.endTime)}</span>
+                          <span>{formatTime(realEndTime)}</span>
                         </div>
                         <div className="col-6">
                           <small className="text-muted d-block">Total Hours</small>
-                          <strong className="text-success">{formatDuration(shift.totalDuration || shift.totalHours)} hrs</strong>
+                          <strong className="text-success">{formatDuration(
+                            realTotalDuration || 
+                            shift.totalHours || 
+                            shift['Total Duration'] ||
+                            shift['Total Hours'] ||
+                            // Fallback: calculate from segments if main duration is 0 or missing
+                            ((!shift.totalDuration || shift.totalDuration === 0) && shift.segments && shift.segments.length > 0 
+                              ? shift.segments.reduce((total, seg) => total + (parseFloat(seg.duration) || 0), 0)
+                              : (shift.firstStartTime && shift.lastEndTime ? calculateDuration(shift.firstStartTime, shift.lastEndTime) : 0))
+                          )} hrs</strong>
                         </div>
                         <div className="col-6">
                           <small className="text-muted d-block">Status</small>
@@ -400,11 +864,11 @@ const ShiftHistory = () => {
                                 : 'btn-outline-primary'
                             }`}
                             onClick={() => handleEditShift(shift)}
-                            disabled={checkingEditHistory || (user && user.role !== 'admin' && (editHistory[shift.shiftId || shift.id] || shift._hasBeenEdited))}
+                            disabled={checkingEditHistory || (user && user.role !== 'admin' && (editHistory[shift.shiftId || shift.id] || shift._hasBeenEdited || shift.hasBeenEdited))}
                             title={
                               checkingEditHistory 
                                 ? 'Checking edit permissions...'
-                                : editHistory[shift.shiftId || shift.id] || shift._hasBeenEdited
+                                : (editHistory[shift.shiftId || shift.id] || shift._hasBeenEdited || shift.hasBeenEdited)
                                   ? (user && user.role !== 'admin' ? 'Already edited (limit reached)' : 'Edit shift times (admin)')
                                   : 'Edit shift times'
                             }
@@ -417,12 +881,13 @@ const ShiftHistory = () => {
                             ) : (
                               <>
                                 <i className="bi bi-pencil me-1"></i>
-                                {(editHistory[shift.shiftId || shift.id] || shift._hasBeenEdited) && 
-                                 user && user.role !== 'admin' ? 'Locked' : 'Edit Times'}
-                                {(editHistory[shift.shiftId || shift.id] || shift._hasBeenEdited) && 
-                                 user && user.role !== 'admin' && (
-                                  <i className="bi bi-lock-fill ms-1" style={{fontSize: '0.8em'}}></i>
-                                )}
+                                {((editHistory[shift.shiftId || shift.id] || shift._hasBeenEdited || shift.hasBeenEdited) && 
+                                 user && user.role !== 'admin') ? (
+                                  <>
+                                    Locked
+                                    <i className="bi bi-lock-fill ms-1" style={{fontSize: '0.8em'}}></i>
+                                  </>
+                                ) : 'Edit Times'}
                               </>
                             )}
                           </button>
@@ -439,7 +904,7 @@ const ShiftHistory = () => {
                       </div>
                     </div>
                   </div>
-                ))}
+                  )})}
               </div>
 
               {/* Desktop Table View */}
@@ -447,6 +912,7 @@ const ShiftHistory = () => {
                 <table className="table table-striped table-hover">
                   <thead className="table-dark">
                     <tr>
+                      <th>Shift ID</th>
                       <th>Date</th>
                       <th>Shift Type</th>
                       <th>Start Time</th>
@@ -457,8 +923,13 @@ const ShiftHistory = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {shifts.map((shift, index) => (
+                    {shifts.map((shift, index) => {
+                      // 🔧 Calculate real-time data for each shift
+                      const { realEndTime, realTotalDuration } = calculateRealTimeDataFromSegments(shift);
+                      
+                      return (
                       <tr key={shift.id || index}>
+                        <td style={{fontFamily: 'monospace', fontSize: '0.85rem'}}>{shift.shiftId || shift.id || 'N/A'}</td>
                         <td>{formatDate(shift.shiftDate || shift.date)}</td>
                         <td>
                           <div className="d-flex flex-column gap-1">
@@ -475,9 +946,9 @@ const ShiftHistory = () => {
                           </div>
                         </td>
                         <td>{formatTime(shift.firstStartTime || shift.startTime)}</td>
-                        <td>{formatTime(shift.lastEndTime || shift.endTime)}</td>
+                        <td>{formatTime(realEndTime)}</td>
                         <td>
-                          <strong>{formatDuration(shift.totalDuration || shift.totalHours)}</strong> hrs
+                          <strong>{formatDuration(realTotalDuration)}</strong> hrs
                         </td>
                         <td>
                           <span className={`badge ${
@@ -498,11 +969,11 @@ const ShiftHistory = () => {
                                   : 'btn-outline-primary'
                               }`}
                               onClick={() => handleEditShift(shift)}
-                              disabled={checkingEditHistory || (user && user.role !== 'admin' && (editHistory[shift.shiftId || shift.id] || shift._hasBeenEdited))}
+                              disabled={checkingEditHistory || (user && user.role !== 'admin' && (editHistory[shift.shiftId || shift.id] || shift._hasBeenEdited || shift.hasBeenEdited))}
                               title={
                                 checkingEditHistory 
                                   ? 'Checking edit permissions...'
-                                  : editHistory[shift.shiftId || shift.id] || shift._hasBeenEdited
+                                  : (editHistory[shift.shiftId || shift.id] || shift._hasBeenEdited || shift.hasBeenEdited)
                                     ? (user && user.role !== 'admin' ? 'Already edited (limit reached)' : 'Edit shift times (admin)')
                                     : 'Edit shift times'
                               }
@@ -512,9 +983,9 @@ const ShiftHistory = () => {
                               ) : (
                                 <>
                                   <i className="bi bi-pencil"></i>
-                                  {(editHistory[shift.shiftId || shift.id] || shift._hasBeenEdited) && 
-                                   user && user.role !== 'admin' && (
-                                    <i className="bi bi-lock-fill ms-1 text-muted" style={{fontSize: '0.7em'}}></i>
+                                  {((editHistory[shift.shiftId || shift.id] || shift._hasBeenEdited || shift.hasBeenEdited) && 
+                                   user && user.role !== 'admin') && (
+                                    <i className="bi bi-lock-fill ms-1 text-muted" style={{fontSize: '0.8em'}}></i>
                                   )}
                                 </>
                               )}
@@ -530,7 +1001,7 @@ const ShiftHistory = () => {
                           </div>
                         </td>
                       </tr>
-                    ))}
+                      )})}
                   </tbody>
                 </table>
               </div>
@@ -542,7 +1013,11 @@ const ShiftHistory = () => {
               <div>
                 <small className="text-muted">
                   Total shifts: {shifts.length} | 
-                  Total hours: {shifts.reduce((sum, shift) => sum + parseFloat(shift.totalDuration || shift.totalHours || 0), 0).toFixed(2)}
+                  Total hours: {shifts.reduce((sum, shift) => {
+                    // 🔧 Use real-time calculated duration
+                    const { realTotalDuration } = calculateRealTimeDataFromSegments(shift);
+                    return sum + realTotalDuration;
+                  }, 0).toFixed(2)}
                 </small>
               </div>
               <div>
@@ -630,6 +1105,29 @@ const ShiftHistory = () => {
                   </div>
                 )}
                 
+                {/* Advanced Time Segment Entry */}
+                {showAdvancedEdit && (
+                  <div className="mt-4">
+                    <h6 className="text-primary">
+                      <i className="bi bi-gear me-2"></i>
+                      Advanced Time Segment Editor
+                    </h6>
+                    <div className="border rounded p-3 bg-light">
+                      <TimeSegmentEntry
+                        existingSegments={editingShift ? JSON.parse(editingShift.timeSegments || '[]') : []}
+                        onSubmit={handleAdvancedEdit}
+                        buttonText="Update Time Segments"
+                        submitButtonClass="btn-success"
+                        showSubmitButton={true}
+                        employeeName={editingShift?.employeeName}
+                        employeeId={editingShift?.employeeId}
+                        shiftDate={editingShift?.shiftDate || editingShift?.date}
+                        onCancel={() => setShowAdvancedEdit(false)}
+                      />
+                    </div>
+                  </div>
+                )}
+                
                 <div className="mt-3">
                   <small className="text-muted">
                     <i className="bi bi-info-circle me-1"></i>
@@ -651,6 +1149,15 @@ const ShiftHistory = () => {
                   disabled={saving}
                 >
                   Cancel
+                </button>
+                <button 
+                  type="button" 
+                  className="btn btn-info me-2" 
+                  onClick={() => setShowAdvancedEdit(!showAdvancedEdit)}
+                  disabled={saving}
+                >
+                  <i className="bi bi-gear me-1"></i>
+                  {showAdvancedEdit ? 'Hide Advanced' : 'Advanced Edit'}
                 </button>
                 <button 
                   type="button" 

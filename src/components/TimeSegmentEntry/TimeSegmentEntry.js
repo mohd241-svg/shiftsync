@@ -178,10 +178,23 @@ const TimeSegmentEntry = ({ onSubmit, existingSegments = [], loading = false, sh
           startTime: seg.startTime,
           endTime: seg.endTime,
           duration: (() => {
-            const start = new Date(`1970-01-01T${seg.startTime}:00`);
-            const end = new Date(`1970-01-01T${seg.endTime}:00`);
-            const diffMs = end - start;
-            return diffMs > 0 ? Math.round((diffMs / (1000 * 60 * 60)) * 100) / 100 : 0;
+            try {
+              const start = new Date(`1970-01-01T${seg.startTime}:00`);
+              const end = new Date(`1970-01-01T${seg.endTime}:00`);
+              let diffMs = end - start;
+              
+              // Handle overnight shifts
+              if (diffMs < 0) {
+                diffMs += 24 * 60 * 60 * 1000;
+              }
+              
+              const hours = diffMs / (1000 * 60 * 60);
+              console.log(`📊 Segment duration: ${seg.startTime} to ${seg.endTime} = ${hours.toFixed(2)} hours`);
+              return Math.round(hours * 100) / 100; // Round to 2 decimal places
+            } catch (error) {
+              console.error('Error calculating segment duration:', error);
+              return 0;
+            }
           })()
         }));
       

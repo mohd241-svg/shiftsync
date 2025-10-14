@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { 
-  TextField, 
   Button, 
   Grid, 
   Alert,
@@ -14,22 +13,15 @@ import {
   List,
   ListItem,
   ListItemIcon,
-  ListItemText,
-  Divider,
-  Accordion,
-  AccordionSummary,
-  AccordionDetails
+  ListItemText
 } from '@mui/material';
 import { 
   AccessTime,
   PlayArrow,
   Pause,
   Stop,
-  Work,
   Schedule,
-  CheckCircle,
-  Warning,
-  ExpandMore
+  CheckCircle
 } from '@mui/icons-material';
 import { useAuth } from '../../contexts/AuthContext';
 import { 
@@ -37,19 +29,16 @@ import {
   getCurrentDate,
   handleAPIError,
   makeAPICall,
-  submitTimeSegments,
-  testBackendAutoUpdate
+  syncStatusToSheet,
+  submitTimeSegments
 } from '../../services/appScriptAPI';
 import TimeSegmentEntry from '../TimeSegmentEntry/TimeSegmentEntry';
 
-const ShiftEntry = () => {
+const ShiftEntry = ({ refreshTrigger }) => {
   const { user } = useAuth();
   const [currentShift, setCurrentShift] = useState(null);
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
-  const [shiftType, setShiftType] = useState('Regular');
-  const [isInitializing, setIsInitializing] = useState(true);
-  const [isEditMode, setIsEditMode] = useState(false);
 
   // Enhanced Smart Status Calculation (synchronized with AdminDashboard)
   const determineSmartStatus = (shiftData) => {
@@ -62,9 +51,13 @@ const ShiftEntry = () => {
     
     const segments = shiftData.segments;
     const now = new Date();
-    const currentDateTime = now.getTime();
-    console.log('⏰ Current date/time:', now.toLocaleString(), 'timestamp:', currentDateTime);
+    const currentTime = now.toLocaleTimeString('en-US', { 
+      hour12: false, 
+      hour: '2-digit', 
+      minute: '2-digit' 
+    });
     
+    console.log('⏰ Current time:', currentTime);
     console.log('📋 Segments:', segments);
 
     if (!Array.isArray(segments) || segments.length === 0) {
@@ -72,78 +65,24 @@ const ShiftEntry = () => {
       return 'DRAFT';
     }
 
-    // Parse shift date to create proper date/time comparisons
-    let shiftDateObj;
-    if (shiftData.date) {
-      // Handle different date formats
-      if (shiftData.date.includes('/')) {
-        // Format: MM/DD/YYYY or similar
-        shiftDateObj = new Date(shiftData.date);
-      } else if (shiftData.date.includes(',')) {
-        // Format: "Oct 8, 2025"
-        shiftDateObj = new Date(shiftData.date);
-      } else {
-        // Try parsing as is
-        shiftDateObj = new Date(shiftData.date);
-      }
-    }
-    
-    if (!shiftDateObj || isNaN(shiftDateObj.getTime())) {
-      console.log('⚠️ Invalid shift date, using today:', shiftData.date);
-      shiftDateObj = new Date();
-      shiftDateObj.setHours(0, 0, 0, 0); // Start of today
-    }
-    
-    console.log('📅 Shift date:', shiftDateObj.toDateString());
-    
-    // 🚨 DATE-AWARE STATUS VALIDATION
-    const today = new Date();
-    const isShiftFromPast = shiftDateObj.toDateString() < today.toDateString();
-    const isShiftFromFuture = shiftDateObj.toDateString() > today.toDateString();
-    const isShiftToday = shiftDateObj.toDateString() === today.toDateString();
-    
-    console.log(`📅 Employee Dashboard Date Analysis: Shift=${shiftDateObj.toDateString()}, Today=${today.toDateString()}`);
-    console.log(`📅 isPast=${isShiftFromPast}, isFuture=${isShiftFromFuture}, isToday=${isShiftToday}`);
-    
-    if (isShiftFromPast) {
-      // For past dates, shifts can only be COMPLETED or DRAFT (never ACTIVE)
-      const hasActiveSegment = segments.some(seg => !seg.endTime);
-      if (hasActiveSegment) {
-        console.log('🚨 PAST DATE with active segment - forcing COMPLETED');
-        return 'COMPLETED';
-      } else if (segments.length > 0 && segments.every(seg => seg.endTime)) {
-        console.log('🎯 Past shift with complete segments - COMPLETED');
-        return 'COMPLETED';
-      } else {
-        console.log('🎯 Past shift with incomplete data - DRAFT');
-        return 'DRAFT';
-      }
-    } else if (isShiftFromFuture) {
-      // For future dates, shifts can only be DRAFT or OFFLINE (never ACTIVE/COMPLETED)
-      console.log('🎯 Future shift - can only be DRAFT or OFFLINE');
-      return 'DRAFT';
-    }
-    
-    // For today's shifts, continue with normal time-based logic
-    if (!isShiftToday) {
-      console.log('🎯 Not today\'s shift - defaulting to DRAFT');
-      return 'DRAFT';
-    }
+    const timeToMinutes = (timeString) => {
+      if (!timeString) return 0;
+      const [hours, minutes] = timeString.split(':').map(Number);
+      return (hours || 0) * 60 + (minutes || 0);
+    };
+
+    const currentTimeMinutes = timeToMinutes(currentTime);
     
     // Get the actual start and end times from segments
     const firstSegment = segments[0];
     const lastSegment = segments[segments.length - 1];
     
     if (firstSegment && firstSegment.startTime) {
-      // Create full datetime for shift start
-      const [startHours, startMinutes] = firstSegment.startTime.split(':').map(Number);
-      const shiftStartDateTime = new Date(shiftDateObj);
-      shiftStartDateTime.setHours(startHours, startMinutes, 0, 0);
+      const firstStartMinutes = timeToMinutes(firstSegment.startTime);
+      console.log('🚀 First start time:', firstSegment.startTime, '=', firstStartMinutes, 'minutes');
       
-      console.log('🚀 Shift start datetime:', shiftStartDateTime.toLocaleString());
-      
-      // Check if shift hasn't started yet (considering date)
-      if (currentDateTime < shiftStartDateTime.getTime()) {
+      // Check if shift hasn't started yet
+      if (currentTimeMinutes < firstStartMinutes) {
         console.log('⚫ Before start time - OFFLINE');
         return 'OFFLINE';
       }
@@ -158,17 +97,13 @@ const ShiftEntry = () => {
       return 'ACTIVE';
     }
 
-    // Check if current time is before the last segment's end time (with date consideration)
+    // Check if current time is before the last segment's end time
     if (lastSegment && lastSegment.endTime) {
-      // Create full datetime for shift end
-      const [endHours, endMinutes] = lastSegment.endTime.split(':').map(Number);
-      const shiftEndDateTime = new Date(shiftDateObj);
-      shiftEndDateTime.setHours(endHours, endMinutes, 0, 0);
+      const lastEndMinutes = timeToMinutes(lastSegment.endTime);
+      console.log('🏁 Last end time:', lastSegment.endTime, '=', lastEndMinutes, 'minutes');
+      console.log('⏰ Comparison: current', currentTimeMinutes, 'vs end', lastEndMinutes);
       
-      console.log('🏁 Shift end datetime:', shiftEndDateTime.toLocaleString());
-      console.log('⏰ Comparison: current', now.toLocaleString(), 'vs end', shiftEndDateTime.toLocaleString());
-      
-      if (currentDateTime < shiftEndDateTime.getTime()) {
+      if (currentTimeMinutes < lastEndMinutes) {
         console.log('🟢 Current time before end time - should be ACTIVE');
         return 'ACTIVE';
       } else {
@@ -177,77 +112,84 @@ const ShiftEntry = () => {
       }
     }
 
-    // If all segments have end times but no clear end time, likely completed for today
+    // If all segments have end times but no clear end time, likely still active
     if (segments.length > 0 && segments.every(seg => seg.endTime)) {
-      console.log('🟡 All segments have end times - COMPLETED for today');
-      return 'COMPLETED';
+      console.log('🟡 All segments have end times but unclear - ACTIVE for safety');
+      return 'ACTIVE'; // Keep as active for manual completion
     }
 
     console.log('📝 Fallback to DRAFT');
     return 'DRAFT';
   };
 
-  // Function to sync status with backend when calculated status differs
-  const syncStatusWithBackend = async (shiftData, calculatedStatus) => {
-    if (calculatedStatus !== shiftData.status) {
-      try {
-        console.log(`🔄 Employee Dashboard - Status sync needed for ${shiftData.shiftId}: ${shiftData.status} → ${calculatedStatus}`);
-        
-        const response = await makeAPICall({
-          action: 'updateShiftStatus',
-          shiftId: shiftData.shiftId,
-          newStatus: calculatedStatus,
-          reason: 'Employee dashboard smart calculation'
-        });
-        
-        if (response.success) {
-          console.log(`✅ Employee Dashboard - Status synced for ${shiftData.shiftId}`);
-          return calculatedStatus;
-        } else {
-          console.warn(`⚠️ Employee Dashboard - Failed to sync status for ${shiftData.shiftId}:`, response.message);
-        }
-      } catch (error) {
-        console.error(`❌ Employee Dashboard - Error syncing status for ${shiftData.shiftId}:`, error);
-      }
-    }
-    return shiftData.status; // Return original status if sync failed
-  };
-
-  // Load current shift status with smart status calculation and sync
+  // Load current shift with smart calculation → update sheet → fetch fresh data
   const loadCurrentShiftStatus = useCallback(async () => {
     if (!user) return;
     setLoading(true);
-    setMessage('Checking shift status...');
+    setMessage('Loading shift data from Google Sheets...');
+    
     try {
       const response = await getCurrentShift({
         employeeId: user.id,
-        date: getCurrentDate()
+        date: getCurrentDate(),
+        forceRefresh: true
       });
+      
       if (response.success && response.data) {
-        // Enhanced: Smart status calculation with automatic backend sync
-        console.log('🔍 Employee Dashboard - Raw backend data:', response.data);
-        const smartStatus = determineSmartStatus(response.data);
-        console.log(`🧮 Employee Dashboard - Smart Status Logic: Backend="${response.data.status}" → Calculated="${smartStatus}"`);
+        console.log('📊 RECEIVED SHEET DATA:', JSON.stringify(response.data, null, 2));
         
-        // Sync with backend if status differs
-        const finalStatus = await syncStatusWithBackend(response.data, smartStatus);
+        const sheetStatus = response.data.status;
+        const calculatedStatus = determineSmartStatus(response.data);
         
-        const enhancedShiftData = {
-          ...response.data,
-          status: finalStatus, // Use final status (post-sync)
-          _originalStatus: response.data.status, // Keep original for debugging
-          _calculatedStatus: smartStatus, // Keep calculated for debugging
-          _statusSynced: finalStatus !== response.data.status
-        };
+        console.log(`STATUS COMPARISON: Sheet="${sheetStatus}" vs Calculated="${calculatedStatus}"`);
         
-        setCurrentShift(enhancedShiftData);
-        
-        // Enhanced status message with sync indicator
-        const syncMessage = enhancedShiftData._statusSynced ? ' (Status auto-corrected)' : '';
-        setMessage(`Shift data loaded successfully. Status: ${finalStatus}${syncMessage}`);
+        // If statuses differ, update sheet first, then fetch fresh data
+        if (sheetStatus !== calculatedStatus) {
+          console.log(`UPDATING SHEET: ${sheetStatus} → ${calculatedStatus}`);
+          
+          try {
+            const syncResult = await syncStatusToSheet(
+              response.data.shiftId,
+              calculatedStatus,
+              `Smart status update: ${sheetStatus} → ${calculatedStatus}`
+            );
+            
+            if (syncResult.success) {
+              console.log('✅ Sheet updated successfully');
+              
+              // Fetch fresh data from updated sheet
+              const freshResponse = await getCurrentShift({
+                employeeId: user.id,
+                date: getCurrentDate(),
+                forceRefresh: true
+              });
+              
+              if (freshResponse.success && freshResponse.data) {
+                console.log('� Fresh sheet data received');
+                setCurrentShift(freshResponse.data);
+                setMessage(`✅ Status updated to ${calculatedStatus} - showing fresh sheet data`);
+              } else {
+                setCurrentShift(response.data);
+                setMessage(`⚠️ Sheet updated but refresh failed - showing original data`);
+              }
+            } else {
+              setCurrentShift(response.data);
+              setMessage(`⚠️ Failed to update sheet: ${syncResult.message}`);
+            }
+          } catch (error) {
+            console.error('❌ Status update error:', error);
+            setCurrentShift(response.data);
+            setMessage(`❌ Error updating status: ${error.message}`);
+          }
+        } else {
+          // Statuses match - display sheet data as-is
+          console.log('✅ Statuses match - displaying sheet data');
+          setCurrentShift(response.data);
+          setMessage(`📊 Current status: ${sheetStatus} (verified)`);
+        }
       } else {
         setCurrentShift(null);
-        setMessage('No shift found for today. You can create a new one.');
+        setMessage('No shift found for today.');
       }
     } catch (error) {
       setMessage('Error: ' + handleAPIError(error));
@@ -257,43 +199,51 @@ const ShiftEntry = () => {
   }, [user]);
 
   useEffect(() => {
-    if (user && isInitializing) {
-      const shiftCheckTimeout = setTimeout(() => {
-        setIsInitializing(false);
-        loadCurrentShiftStatus();
-      }, 1500);
-      return () => clearTimeout(shiftCheckTimeout);
-    } else if (!user) {
-      setIsInitializing(true);
+    if (user) {
+      loadCurrentShiftStatus();
     }
-  }, [user, isInitializing, loadCurrentShiftStatus]);
+  }, [user, loadCurrentShiftStatus]);
 
-  // Auto-update status every 30 seconds to keep it current
+  // Trigger refresh when refreshTrigger changes (from parent StaffDashboard)
   useEffect(() => {
-    if (!user || !currentShift) return;
+    if (refreshTrigger && user) {
+      console.log('🔄 Refresh trigger activated - fetching fresh data');
+      loadCurrentShiftStatus();
+    }
+  }, [refreshTrigger, user, loadCurrentShiftStatus]);
 
-    const statusUpdateInterval = setInterval(() => {
-      if (currentShift && currentShift.segments) {
-        const newSmartStatus = determineSmartStatus(currentShift);
-        if (newSmartStatus !== currentShift.status) {
-          console.log(`🔄 Status Auto-Update: ${currentShift.status} → ${newSmartStatus}`);
-          
-          // Update frontend state
-          setCurrentShift(prev => ({
-            ...prev,
-            status: newSmartStatus
-          }));
-
-          // Sync with backend using enhanced sync function
-          if (currentShift.shiftId) {
-            syncStatusWithBackend(currentShift, newSmartStatus);
-          }
-        }
+  // Refresh data when tab becomes visible/active
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (!document.hidden && user) {
+        console.log('🔄 Tab became visible - refreshing shift data');
+        loadCurrentShiftStatus();
       }
-    }, 30000); // Update every 30 seconds
+    };
 
-    return () => clearInterval(statusUpdateInterval);
-  }, [user, currentShift]);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [user, loadCurrentShiftStatus]);
+
+  // Listen for console debug refresh events
+  useEffect(() => {
+    const handleConsoleRefresh = (event) => {
+      if (user) {
+        console.log('🔧 Console debug refresh triggered:', event.detail);
+        setMessage('🔧 Console debug triggered - reloading data...');
+        loadCurrentShiftStatus();
+      }
+    };
+
+    window.addEventListener('forceShiftRefresh', handleConsoleRefresh);
+    
+    return () => {
+      window.removeEventListener('forceShiftRefresh', handleConsoleRefresh);
+    };
+  }, [user, loadCurrentShiftStatus]);
 
   const handleSubmitTimeSegments = async (segments, scheduleInfo = {}) => {
     setLoading(true);
@@ -306,56 +256,42 @@ const ShiftEntry = () => {
     }
 
     try {
-      // Check if there's already an ACTIVE or COMPLETED shift for today
-      const todayDate = getCurrentDate();
-      console.log('🔍 Checking for existing shifts on:', todayDate);
-      
-      const existingShiftsResponse = await makeAPICall({
-        action: 'getShifts',
-        employeeId: user.id,
-        startDate: todayDate,
-        endDate: todayDate
-      });
-
-      if (existingShiftsResponse.success && existingShiftsResponse.data) {
-        const todayShifts = Array.isArray(existingShiftsResponse.data) 
-          ? existingShiftsResponse.data 
-          : [existingShiftsResponse.data];
-        
-        const activeOrCompletedShifts = todayShifts.filter(shift => 
-          shift.status === 'ACTIVE' || shift.status === 'COMPLETED'
-        );
-        
-        console.log('🔍 Found existing shifts for today:', activeOrCompletedShifts);
-        
-        if (activeOrCompletedShifts.length > 0) {
-          const existingShift = activeOrCompletedShifts[0];
-          const statusText = existingShift.status === 'ACTIVE' ? 'active' : 'completed';
-          
-          setMessage(`Error: You already have an ${statusText} shift for today (${todayDate}). Please use the history tab to edit your existing shift instead of creating a new one.`);
-          setLoading(false);
-          return;
-        }
-      }
-
-      // Proceed with creating new shift if no conflicts
-      const response = await submitTimeSegments({
+      const payload = {
         segments,
         employeeName: user.name,
         employeeId: user.id,
-        shiftType,
-        date: todayDate,
+        shiftType: 'Regular',
+        date: getCurrentDate(),
         ...scheduleInfo
-      });
+      };
+      
+      // 🔥 CRITICAL: Pass existing shift ID if available for proper segment updates
+      if (currentShift && currentShift.shiftId) {
+        payload.existingShiftId = currentShift.shiftId;
+        payload.isUpdate = true;
+        console.log(`🔧 Using existing shift ID: ${currentShift.shiftId} for segment update`);
+      } else {
+        console.log('🆕 Creating new shift (no existing shift ID)');
+      }
+      
+      console.log('📤 ShiftEntry submitting segments with payload:', payload);
+      
+      const response = await submitTimeSegments(payload);
 
       if (response.success) {
-        setMessage('Time segments submitted successfully!');
-        loadCurrentShiftStatus();
+        setMessage('✅ Time segments updated successfully in Google Sheets!');
+        
+        // 🔄 Force fresh data reload to show updated segments
+        console.log('🔄 Forcing fresh data reload after segment update...');
+        setTimeout(() => {
+          loadCurrentShiftStatus();
+        }, 1000); // Small delay to ensure backend processing is complete
+        
       } else {
-        setMessage('Error: ' + response.message);
+        setMessage('❌ Error: ' + response.message);
       }
     } catch (error) {
-      setMessage('Error: ' + handleAPIError(error));
+      setMessage('❌ Error: ' + handleAPIError(error));
     } finally {
       setLoading(false);
     }
@@ -414,25 +350,25 @@ const ShiftEntry = () => {
   const renderShiftSummary = () => {
     if (!currentShift) return null;
 
-    const { segments = [], status, _statusSynced } = currentShift;
+    const { segments = [], status } = currentShift;
 
     return (
       <Card sx={{ mb: 2 }}>
         <CardContent>
           <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
-            <Typography variant="h6">Current Shift Status</Typography>
+            <Typography variant="h6">Current Shift (Pure Sheet Data)</Typography>
             <Box display="flex" alignItems="center" gap={1}>
               {renderStatusChip(status)}
-              {_statusSynced && (
-                <Chip
-                  icon={<Warning />}
-                  label="Auto-corrected"
-                  color="warning"
-                  variant="outlined"
-                  size="small"
-                />
-              )}
             </Box>
+          </Box>
+          
+          <Box mb={2}>
+            <Typography variant="body2" color="text.secondary">
+              Shift ID: {currentShift.shiftId} | Date: {currentShift.date}
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Total Duration: {currentShift.totalDuration || 'N/A'} | Last End: {currentShift.lastEndTime || 'N/A'}
+            </Typography>
           </Box>
           
           {segments.length > 0 && (
@@ -460,53 +396,16 @@ const ShiftEntry = () => {
     );
   };
 
-  if (isInitializing) {
-    return (
-      <Box display="flex" justifyContent="center" alignItems="center" minHeight="200px">
-        <CircularProgress />
-        <Typography variant="body1" sx={{ ml: 2 }}>
-          Loading shift information...
-        </Typography>
-      </Box>
-    );
-  }
-
   return (
     <Box>
-      <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
-        <Typography variant="h4">
-          Shift Entry
-        </Typography>
-        <Button
-          variant="outlined"
-          size="small"
-          onClick={loadCurrentShiftStatus}
-          disabled={loading}
-          startIcon={loading ? <CircularProgress size={16} /> : <AccessTime />}
-          sx={{ minWidth: '120px' }}
-        >
-          {loading ? 'Refreshing...' : 'Refresh Status'}
-        </Button>
-      </Box>
+      <Typography variant="h4" gutterBottom>
+        Shift Entry
+      </Typography>
 
       {message && (
         <Alert 
           severity={message.includes('Error') ? 'error' : 'success'} 
           sx={{ mb: 2 }}
-          action={
-            message.includes('already have an') && message.includes('shift for today') ? (
-              <Button 
-                color="inherit" 
-                size="small"
-                onClick={() => {
-                  // This would need to be passed from parent to navigate to history
-                  window.location.hash = '#history'; // Simple navigation
-                }}
-              >
-                Go to History
-              </Button>
-            ) : null
-          }
         >
           {message}
         </Alert>
@@ -515,14 +414,12 @@ const ShiftEntry = () => {
       {renderShiftSummary()}
 
       <Grid container spacing={2}>
-        <Grid size={12}>
+        <Grid item xs={12}>
           <Paper sx={{ p: 2 }}>
             <TimeSegmentEntry
               onSubmit={handleSubmitTimeSegments}
               currentShift={currentShift}
               loading={loading}
-              isEditMode={isEditMode}
-              setIsEditMode={setIsEditMode}
             />
           </Paper>
         </Grid>
@@ -538,6 +435,28 @@ const ShiftEntry = () => {
             startIcon={<Stop />}
           >
             Complete Shift
+          </Button>
+          <Button
+            variant="outlined"
+            color="secondary"
+            onClick={loadCurrentShiftStatus}
+            disabled={loading}
+            sx={{ ml: 2 }}
+          >
+            Refresh Sheet Data
+          </Button>
+        </Box>
+      )}
+
+      {(!currentShift || currentShift.status !== 'ACTIVE') && (
+        <Box mt={2}>
+          <Button
+            variant="outlined"
+            color="primary"
+            onClick={loadCurrentShiftStatus}
+            disabled={loading}
+          >
+            Refresh Sheet Data
           </Button>
         </Box>
       )}

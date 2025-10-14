@@ -38,6 +38,10 @@ const AdminDashboard = () => {
   const [showOverviewTable, setShowOverviewTable] = useState(false);
   const [columnFilters, setColumnFilters] = useState({});
   const [customDateRange, setCustomDateRange] = useState({ start: '', end: '' });
+  const [selectedView, setSelectedView] = useState('complete'); // Column view selector
+  const [segmentModalOpen, setSegmentModalOpen] = useState(false);
+  const [segmentModalContent, setSegmentModalContent] = useState('');
+  const [segmentModalTitle, setSegmentModalTitle] = useState('');
   
   // Shifts tab specific states
   const [shiftsTimePeriod, setShiftsTimePeriod] = useState('week');
@@ -84,39 +88,237 @@ const AdminDashboard = () => {
 
 
   // Define exact column order and names from Apps Script (excluding Row Index)
+  // 🔥 EXACT GOOGLE SHEETS COLUMN STRUCTURE (15 columns A-O)
+  // Matches createRealTimeHeaders() in appscript.js
   const appsScriptColumns = [
-    { key: 'Shift ID', label: 'Shift ID' },
-    { key: 'Employee Name', label: 'Employee Name' },
-    { key: 'Employee ID', label: 'Employee ID' },
-    { key: 'Shift Date', label: 'Shift Date' },
-    { key: 'Shift Type', label: 'Shift Type' },
-    { key: 'First Start Time', label: 'First Start Time' },
-    { key: 'Last End Time', label: 'Last End Time' },
-    { key: 'Total Duration', label: 'Total Duration' },
-    { key: 'Number of Segments', label: 'Number of Segments' },
-    { key: 'Segments Data', label: 'Segments Data' },
-    { key: 'Status', label: 'Status' },
-    { key: 'Created At', label: 'Created At' },
-    { key: 'Last Updated', label: 'Last Updated' },
-    { key: 'Initial Segment Data', label: 'Initial Segment Data' },
-    { key: 'Updated', label: 'Updated' },
-    { key: 'Time Zone', label: 'Time Zone' }
+    { key: 'Shift ID', label: 'Shift ID' },              // Column A
+    { key: 'Employee Name', label: 'Employee Name' },    // Column B
+    { key: 'Employee ID', label: 'Employee ID' },        // Column C
+    { key: 'Shift Date', label: 'Shift Date' },          // Column D
+    { key: 'Shift Type', label: 'Shift Type' },          // Column E
+    { key: 'First Start Time', label: 'First Start Time' }, // Column F
+    { key: 'Last End Time', label: 'Last End Time' },    // Column G
+    { key: 'Total Duration', label: 'Total Duration' },  // Column H
+    { key: 'Number of Segments', label: 'Number of Segments' }, // Column I
+    { key: 'Segments Data', label: 'Segments Data' },    // Column J
+    { key: 'Status', label: 'Status' },                  // Column K
+    { key: 'Created At', label: 'Created At' },          // Column L
+    { key: 'Last Updated', label: 'Last Updated' },      // Column M
+    { key: 'Initial Segment Data', label: 'Initial Segment Data' }, // Column N
+    { key: 'Updated', label: 'Updated' }                 // Column O
   ];
+
+  // Helper function to calculate duration from time strings (HH:MM format)
+  const calculateDurationFromTimes = (startTime, endTime) => {
+    if (!startTime || !endTime) return 0;
+    
+    try {
+      // Handle different time formats
+      const parseTime = (timeStr) => {
+        // Handle ISO timestamp format (e.g., "1899-12-30T05:00:00.000Z")
+        if (typeof timeStr === 'string' && (timeStr.includes('T') || timeStr.includes('Z'))) {
+          const date = new Date(timeStr);
+          return date.getHours() + date.getMinutes() / 60;
+        }
+        // Handle HH:MM format
+        if (typeof timeStr === 'string' && timeStr.includes(':')) {
+          const [hours, minutes] = timeStr.split(':').map(num => parseInt(num));
+          return hours + minutes / 60;
+        }
+        return 0;
+      };
+      
+      const startHours = parseTime(startTime);
+      const endHours = parseTime(endTime);
+      
+      let duration = endHours - startHours;
+      
+      // Handle overnight shifts (end time is before start time)
+      if (duration < 0) {
+        duration += 24;
+      }
+      
+      return Math.max(0, duration);
+    } catch (error) {
+      console.error('Error calculating duration from times:', error, { startTime, endTime });
+      return 0;
+    }
+  };
+
+  // Helper function to get duration with fallback to segments
+  const getDurationFromShift = (shift) => {
+    // Safety check: ensure shift exists and is an object
+    if (!shift || typeof shift !== 'object') {
+      console.warn('getDurationFromShift: Invalid shift data:', shift);
+      return 0;
+    }
+    
+    // Try to get duration from Total Duration column first
+    let duration = parseFloat(shift['Total Duration']) || 0;
+    
+    // Fallback 1: Calculate from segments if main duration is 0
+    if (duration === 0 && shift['Segments Data']) {
+      try {
+        const segmentsData = typeof shift['Segments Data'] === 'string' 
+          ? JSON.parse(shift['Segments Data']) 
+          : shift['Segments Data'];
+        
+        if (Array.isArray(segmentsData) && segmentsData.length > 0) {
+          // Try to sum up segment durations
+          duration = segmentsData.reduce((total, seg) => {
+            // If segment has duration field, use it
+            if (seg.duration && !isNaN(parseFloat(seg.duration))) {
+              return total + parseFloat(seg.duration);
+            }
+            // Otherwise calculate from start/end times
+            if (seg.startTime && seg.endTime) {
+              return total + calculateDurationFromTimes(seg.startTime, seg.endTime);
+            }
+            return total;
+          }, 0);
+        }
+      } catch (error) {
+        console.error('Error parsing segments for duration calculation:', error);
+      }
+    }
+    
+    // Fallback 2: Calculate from First Start Time and Last End Time
+    if (duration === 0 && shift['First Start Time'] && shift['Last End Time']) {
+      duration = calculateDurationFromTimes(shift['First Start Time'], shift['Last End Time']);
+    }
+    
+    return duration;
+  };
+
+  // Diagnostic function for console testing
+  window.debugDurationCalculation = () => {
+    console.log('🔍 === DURATION CALCULATION DIAGNOSTIC ===');
+    
+    const data = getFilteredShiftsData();
+    console.log('📊 Total shifts in filtered data:', data.length);
+    
+    if (data.length === 0) {
+      console.log('❌ No shift data available in filtered results.');
+      console.log('🔍 Checking raw data and state...');
+      console.log('Raw shifts data length:', shiftsData.length);
+      console.log('Show shifts table:', showShiftsTable);
+      console.log('Selected time period:', shiftsTimePeriod);
+      console.log('Column filters:', shiftsColumnFilters);
+      console.log('Global filter:', globalFilter);
+      
+      if (shiftsData.length > 0) {
+        console.log('✅ Raw data exists, but filtered out. First raw record:');
+        console.log(shiftsData[0]);
+      } else {
+        console.log('❌ No raw shift data. Try loading shifts first by clicking "Load Data" or changing the time period.');
+      }
+      return;
+    }
+    
+    data.forEach((shift, index) => {
+      console.log(`\n📋 Shift ${index + 1}:`);
+      console.log('  Shift ID:', shift['Shift ID']);
+      console.log('  Employee:', shift['Employee Name']);
+      console.log('  Date:', shift['Shift Date']);
+      console.log('  Times:', shift['First Start Time'], '→', shift['Last End Time']);
+      console.log('  Backend Duration:', shift['Total Duration']);
+      console.log('  Segments Data:', shift['Segments Data']);
+      
+      try {
+        const calculatedDuration = getDurationFromShift(shift);
+        console.log('  ✅ Calculated Duration:', calculatedDuration.toFixed(2), 'hours');
+        console.log('  ✅ Formatted Display:', calculatedDuration > 0 ? `${calculatedDuration.toFixed(1)}h` : '-');
+        
+        if (shift['Segments Data']) {
+          const segments = JSON.parse(shift['Segments Data']);
+          console.log('  📊 Segments breakdown:', segments.map(s => `${s.startTime}-${s.endTime} (${s.duration}h)`));
+        }
+      } catch (error) {
+        console.log('  ❌ Error calculating duration:', error);
+      }
+    });
+    
+    console.log('\n🎯 === SUMMARY ===');
+    const totalHours = data.reduce((sum, shift) => sum + getDurationFromShift(shift), 0);
+    console.log('Total hours across all shifts:', totalHours.toFixed(2));
+    console.log('=================================');
+  };
+
+  // Additional helper for quick testing
+  window.debugAdminData = () => {
+    console.log('🔍 === ADMIN DATA STATE DEBUG ===');
+    console.log('Shifts data length:', shiftsData.length);
+    console.log('Raw shifts data length:', rawShiftsData.length);
+    console.log('Show shifts table:', showShiftsTable);
+    console.log('Loading state:', loading);
+    console.log('Is loading:', isLoading);
+    console.log('Time period:', shiftsTimePeriod);
+    console.log('Column filters:', shiftsColumnFilters);
+    console.log('Global filter:', globalFilter);
+    console.log('Filtered data length:', getFilteredShiftsData().length);
+    console.log('====================================');
+    
+    if (rawShiftsData.length > 0) {
+      console.log('Sample raw record:', rawShiftsData[0]);
+    }
+    if (shiftsData.length > 0) {
+      console.log('Sample processed record:', shiftsData[0]);
+    }
+  };
+
+  // Manual data loader for console testing
+  window.loadShiftsDataManually = async () => {
+    console.log('🚀 === MANUAL DATA LOADING ===');
+    console.log('Current time period:', shiftsTimePeriod);
+    
+    try {
+      console.log('📡 Calling handleViewShiftsData...');
+      await handleViewShiftsData();
+      console.log('✅ Data loading completed!');
+      console.log('📊 New data count:', shiftsData.length);
+      
+      // Run diagnostics automatically after loading
+      setTimeout(() => {
+        console.log('\n🔄 Running post-load diagnostics...');
+        window.debugAdminData();
+        window.debugDurationCalculation();
+      }, 1000);
+      
+    } catch (error) {
+      console.error('❌ Error loading data:', error);
+    }
+  };
+
+  // Test edit functionality
+  window.testEditFunctionality = () => {
+    console.log('🔧 === TESTING EDIT FUNCTIONALITY ===');
+    console.log('Available shifts for editing:', shiftsData.length);
+    
+    if (shiftsData.length > 0) {
+      console.log('✅ Test: Click edit on first shift');
+      console.log('Shift data:', shiftsData[0]);
+      console.log('Fields that can be edited:', ['Employee ID', 'Employee Name', 'Shift Date', 'Shift Type', 'First Start Time', 'Last End Time', 'Status']);
+      console.log('\n📝 Instructions:');
+      console.log('1. Click the pencil icon on any shift');
+      console.log('2. Change the First Start Time or Last End Time');
+      console.log('3. Click Save');
+      console.log('4. Check console for save operation results');
+    } else {
+      console.log('❌ No shifts available. Load data first with: loadShiftsDataManually()');
+    }
+  };
 
   const columns = useMemo(() => {
     return appsScriptColumns.map(col => ({
       accessorKey: col.key,
       header: col.label,
-      Cell: ({ cell }) => formatCellData(cell.getValue(), col.key),
+      Cell: ({ cell, row }) => formatCellData(cell.getValue(), col.key, row.original),
     }));
   }, []);
 
   // Smart Status Calculation Logic (moved from Apps Script)
   const calculateSmartStatus = (segments, currentTime, firstStartTime, lastEndTime, shiftDate) => {
-    console.log('🧮 Calculating smart status:', { segments, currentTime, firstStartTime, lastEndTime, shiftDate });
-    
     if (!segments || segments.length === 0) {
-      console.log('📝 No segments - DRAFT');
       return 'DRAFT';
     }
 
@@ -125,7 +327,6 @@ const AdminDashboard = () => {
     if (typeof segments === 'string') {
       try {
         parsedSegments = JSON.parse(segments);
-        console.log('📋 Parsed segments:', parsedSegments);
       } catch (e) {
         console.log('❌ Failed to parse segments:', e);
         return 'DRAFT';
@@ -359,6 +560,54 @@ const AdminDashboard = () => {
     return normalized;
   };
 
+  // View Type configurations for column filtering
+  const viewTypes = [
+    { 
+      value: 'essential', 
+      label: 'Essential View (7 cols)',
+      columns: ['Shift ID', 'Employee Name', 'Shift Date', 'First Start Time', 'Last End Time', 'Total Duration', 'Status']
+    },
+    { 
+      value: 'management', 
+      label: 'Management View (9 cols)',
+      columns: ['Shift ID', 'Employee Name', 'Employee ID', 'Shift Date', 'Shift Type', 'First Start Time', 'Last End Time', 'Total Duration', 'Status']
+    },
+    { 
+      value: 'complete', 
+      label: 'Complete View (All 15 cols)',
+      columns: appsScriptColumns.map(col => col.key)
+    },
+    { 
+      value: 'timetracking', 
+      label: 'Time Tracking (8 cols)',
+      columns: ['Shift ID', 'Employee Name', 'Shift Date', 'First Start Time', 'Last End Time', 'Total Duration', 'Number of Segments', 'Status']
+    },
+    { 
+      value: 'audit', 
+      label: 'Audit Trail (10 cols)',
+      columns: ['Shift ID', 'Employee Name', 'Employee ID', 'Shift Date', 'Status', 'Created At', 'Last Updated', 'Initial Segment Data', 'Segments Data', 'Updated']
+    },
+    { 
+      value: 'quick', 
+      label: 'Quick Summary (5 cols)',
+      columns: ['Employee Name', 'Shift Date', 'Total Duration', 'Number of Segments', 'Status']
+    }
+    ,
+    {
+      value: 'updatescheck',
+      label: 'Updates Check View (7 cols)',
+      columns: [
+        'Shift ID',
+        'Employee Name',
+        'Shift Date',
+        'Segments Data',
+        'Initial Segment Data',
+        'Status',
+        'Updated'
+      ]
+    }
+  ];
+
   // Function to get selected columns in original sheet order
   const getOrderedSelectedColumns = () => {
     if (!shiftsData || shiftsData.length === 0) return [];
@@ -370,21 +619,39 @@ const AdminDashboard = () => {
     return appsScriptColumns.map(col => col.key);
   };
 
-  // Function to get ordered selected columns for overview tab
+  // Function to get ordered selected columns for overview tab based on selected view
   const getOrderedOverviewColumns = () => {
+    const selectedViewConfig = viewTypes.find(view => view.value === selectedView);
+    if (selectedViewConfig) {
+      return selectedViewConfig.columns;
+    }
     return appsScriptColumns.map(col => col.key);
   };
   
   // Time period options
   const timePeriodOptions = [
-    { value: 'today', label: 'Today' },
-    { value: 'week', label: 'This Week' },
-    { value: 'month', label: 'This Month' },
-    { value: 'quarter', label: 'This Quarter' },
-    { value: 'year', label: 'This Year' },
-    { value: 'last7days', label: 'Last 7 Days' },
-    { value: 'last30days', label: 'Last 30 Days' },
-    { value: 'custom', label: 'Custom Range' }
+  { value: 'today', label: 'Today' },
+  { value: 'week', label: 'This Week' },
+  { value: 'month', label: 'This Month' },
+  { value: 'quarter', label: 'This Quarter' },
+  { value: 'year', label: 'This Year' },
+  { value: 'last7days', label: 'Last 7 Days' },
+  { value: 'last30days', label: 'Last 30 Days' },
+  { value: 'custom', label: 'Custom Range' },
+  { value: 'monthlyAvgPerEmployee', label: 'Monthly Average per Employee' },
+  { value: 'weeklyTotalPerEmployee', label: 'Weekly Total per Employee' },
+  { value: 'weeklyAvgPerEmployee', label: 'Weekly Average per Employee' },
+  { value: 'quarterlyTotalPerEmployee', label: 'Quarterly Total per Employee' },
+  { value: 'quarterlyAvgPerEmployee', label: 'Quarterly Average per Employee' },
+  { value: 'yearlyAvgPerEmployee', label: 'Yearly Average per Employee' },
+  { value: 'yearlyTotalPerEmployee', label: 'Yearly Total per Employee' },
+  { value: 'allTimeTotalPerEmployee', label: 'All Time Total per Employee' },
+  { value: 'weeklyTotal', label: 'Weekly Total (All Employees)' },
+  { value: 'monthlyTotal', label: 'Monthly Total (All Employees)' },
+  { value: 'quarterlyTotal', label: 'Quarterly Total (All Employees)' },
+  { value: 'yearlyTotal', label: 'Yearly Total (All Employees)' },
+  { value: 'allTimeTotal', label: 'All Time Total (All Employees)' },
+  { value: 'allTimeAverage', label: 'All Time Average (All Employees)' }
   ];
 
   // Load initial data
@@ -936,7 +1203,7 @@ const AdminDashboard = () => {
     else if (promptLower.includes('staff') || promptLower.includes('employee') || promptLower.includes('team')) {
       if (promptLower.includes('performance') || promptLower.includes('productivity')) {
         const avgShiftsPerEmployee = shifts.length / staff.length;
-        const totalHours = shifts.reduce((sum, shift) => sum + (parseFloat(shift['Total Duration']) || 0), 0);
+        const totalHours = shifts.reduce((sum, shift) => sum + getDurationFromShift(shift), 0);
         const avgHoursPerEmployee = totalHours / staff.length;
         
         response = `Staff performance analysis: You have ${staff.length} employees with an average of ${avgShiftsPerEmployee.toFixed(1)} shifts per employee. Average working hours per employee is ${avgHoursPerEmployee.toFixed(1)} hours. `;
@@ -989,8 +1256,8 @@ const AdminDashboard = () => {
     // Shift-related queries
     else if (promptLower.includes('shift') || promptLower.includes('schedule') || promptLower.includes('hours')) {
       if (promptLower.includes('overtime') || promptLower.includes('long')) {
-        const longShifts = shifts.filter(shift => parseFloat(shift['Total Duration']) > 8);
-        const overtimeHours = longShifts.reduce((sum, shift) => sum + (parseFloat(shift['Total Duration']) - 8), 0);
+        const longShifts = shifts.filter(shift => getDurationFromShift(shift) > 8);
+        const overtimeHours = longShifts.reduce((sum, shift) => sum + (getDurationFromShift(shift) - 8), 0);
         
         response = `Overtime analysis: ${longShifts.length} shifts exceeded 8 hours, totaling ${overtimeHours.toFixed(1)} overtime hours. This represents ${((longShifts.length / shifts.length) * 100).toFixed(1)}% of all shifts. `;
         
@@ -1518,7 +1785,7 @@ const AdminDashboard = () => {
   };
 
   // Format data for display
-  const formatCellData = (value, columnKey) => {
+  const formatCellData = (value, columnKey, row = {}) => {
     if (!value && value !== 0) return '-';
     
     switch (columnKey) {
@@ -1615,17 +1882,48 @@ const AdminDashboard = () => {
         }
         return value;
         
-      case 'totalTime':
-      case 'Total Duration':
-        // Format total time as hours
-        if (typeof value === 'number') {
-          return value > 0 ? `${value.toFixed(1)}h` : '-';
-        }
-        if (typeof value === 'string' && !isNaN(parseFloat(value))) {
-          const hours = parseFloat(value);
-          return hours > 0 ? `${hours.toFixed(1)}h` : '-';
+      case 'Created At':
+      case 'Last Updated':
+        // Format timestamp from ISO string to readable format
+        if (typeof value === 'string') {
+          // Handle ISO timestamp format (e.g., "2025-10-08T08:18:28.807Z")
+          if (value.includes('T') || value.includes('Z') || value.match(/^\d{4}-\d{2}-\d{2}/)) {
+            try {
+              const date = new Date(value);
+              
+              // Check for invalid or bogus dates (like 1899 Excel epoch)
+              if (isNaN(date.getTime()) || date.getFullYear() < 2020) {
+                return 'Invalid Date';
+              }
+              
+              return date.toLocaleString('en-US', {
+                year: 'numeric',
+                month: 'short',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+                hour12: true
+                // No timeZone specified = automatic system timezone detection
+              });
+            } catch (error) {
+              return 'Invalid Date';
+            }
+          }
+          // Already formatted date
+          return value;
         }
         return value;
+        
+      case 'totalTime':
+      case 'Total Duration':
+        // Format total time as hours with fallback to segments data
+        if (!row) {
+          console.warn('formatCellData: No row data available for Total Duration');
+          return typeof value === 'number' && value > 0 ? `${value.toFixed(1)}h` : '-';
+        }
+        
+        const duration = getDurationFromShift(row);
+        return duration > 0 ? `${duration.toFixed(1)}h` : '-';
         
       case 'Number of Segments':
       case 'numberOfSegments':
@@ -1888,10 +2186,37 @@ const AdminDashboard = () => {
       console.log('Shift ID:', shiftId);
       console.log('Edit Form Data:', editFormData);
       
+      // Create proper timestamp in the format: 2025-10-10 16:12:26
+      const now = new Date();
+      const fullTimestamp = now.getFullYear() + '-' + 
+                           String(now.getMonth() + 1).padStart(2, '0') + '-' + 
+                           String(now.getDate()).padStart(2, '0') + ' ' + 
+                           String(now.getHours()).padStart(2, '0') + ':' + 
+                           String(now.getMinutes()).padStart(2, '0') + ':' + 
+                           String(now.getSeconds()).padStart(2, '0');
+      
+      // Prepare the update data in the format the backend expects
+      const updateData = {
+        shiftId: shiftId,
+        updates: {
+          employeeName: editFormData['Employee Name'],
+          employeeID: editFormData['Employee ID'],
+          shiftDate: editFormData['Shift Date'],
+          shiftType: editFormData['Shift Type'],
+          startTime: editFormData['First Start Time'],  // Map to backend field
+          endTime: editFormData['Last End Time'],       // Map to backend field
+          status: editFormData['Status'],
+          lastUpdated: fullTimestamp  // Send full timestamp from frontend
+        }
+      };
+      
+      console.log('Formatted update data:', updateData);
+      console.log('Full timestamp being sent:', fullTimestamp);
+      
+      // Use the correct API call that matches backend
       const response = await makeAPICall({
         action: 'updateShiftAsAdmin',
-        shiftId: shiftId,
-        updates: editFormData
+        ...updateData
       });
       
       console.log('Update response:', response);
@@ -1900,7 +2225,7 @@ const AdminDashboard = () => {
         setMessage('Shift updated successfully');
         setEditingShift(null);
         setEditFormData({});
-        // Reload shifts data
+        // Reload shifts data to show changes
         await handleViewShiftsData();
       } else {
         setMessage(response.message || 'Failed to update shift');
@@ -2197,28 +2522,10 @@ const AdminDashboard = () => {
               Overview
             </button>
             <button 
-              className={`btn btn-sm me-2 ${activeTab === 'shifts' ? 'btn-light' : 'btn-outline-light'}`}
-              onClick={() => setActiveTab('shifts')}
-            >
-              Shifts
-            </button>
-            <button 
               className={`btn btn-sm me-2 ${activeTab === 'staff' ? 'btn-light' : 'btn-outline-light'}`}
               onClick={() => setActiveTab('staff')}
             >
               Staff
-            </button>
-            <button 
-              className={`btn btn-sm me-2 ${activeTab === 'experimental' ? 'btn-light' : 'btn-outline-light'}`}
-              onClick={() => setActiveTab('experimental')}
-            >
-              🧪 Experimental
-            </button>
-            <button 
-              className={`btn btn-sm me-2 ${activeTab === 'system' ? 'btn-light' : 'btn-outline-light'}`}
-              onClick={() => setActiveTab('system')}
-            >
-              System
             </button>
           </div>
           
@@ -2419,178 +2726,35 @@ const AdminDashboard = () => {
               </div>
             )}
 
-            {/* Data Table */}
+            {/* View Type Selector - Add dropdown for customized column views */}
             {showOverviewTable && (
               <div className="col-12">
                 <div className="card">
-                  <div className="card-header d-flex justify-content-between align-items-center">
-                    <h6 className="card-title mb-0">📋 Data Table</h6>
-                    <small className="text-muted">
-                      Showing {getFilteredData().length} of {overviewData.length} records
-                    </small>
-                  </div>
-                  <div className="card-body">
-                    <div className="table-responsive">
-                      <table className="table table-striped table-hover table-sm">
-                        <thead className="table-dark">
-                          <tr>
-                            {getOrderedOverviewColumns().map(colKey => {
-                              const column = appsScriptColumns.find(col => col.key === colKey);
-                              return (
-                                <th key={colKey} className="text-nowrap">
-                                  {column?.label || colKey}
-                                </th>
-                              );
-                            })}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {getFilteredData().map((row, index) => (
-                            <tr key={row.id || index}>
-                              {getOrderedOverviewColumns().map(colKey => (
-                                <td key={colKey} className="text-nowrap">
-                                  {colKey === 'status' ? (
-                                    <span className={`badge ${
-                                      row[colKey] === 'ACTIVE' ? 'bg-success' :
-                                      row[colKey] === 'COMPLETED' ? 'bg-primary' :
-                                      'bg-secondary'
-                                    }`}>
-                                      {row[colKey]}
-                                    </span>
-                                  ) : (
-                                    formatCellData(row[colKey], colKey)
-                                  )}
-                                </td>
-                              ))}
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                      
-                      {getFilteredData().length === 0 && (
-                        <div className="text-center py-4">
-                          <p className="text-muted mb-0">No data matches your filters</p>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Shifts Management Tab */}
-        {activeTab === 'shifts' && (
-          <div className="row g-3 g-md-4">
-            <div className="col-12">
-              <h2 className="h4 mb-3">⏰ Shift Management & Editing</h2>
-            </div>
-
-            {/* Quick Actions - Shifts Data Viewer */}
-            <div className="col-12">
-              <div className="card">
-                <div className="card-header">
-                  <h5 className="card-title mb-0">🔍 Shifts Data Viewer & Editor</h5>
-                </div>
-                <div className="card-body">
-                  <div className="row g-3 align-items-end">
-                    {/* Time Period Selection */}
-                    <div className="col-12 col-md-4">
-                      <label className="form-label small">Select Time Period:</label>
-                      <select 
-                        className="form-select"
-                        value={shiftsTimePeriod}
-                        onChange={(e) => setShiftsTimePeriod(e.target.value)}
-                      >
-                        {timePeriodOptions.map(option => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    
-                    {/* Custom Date Range (when Custom is selected) */}
-                    {shiftsTimePeriod === 'custom' && (
-                      <>
-                        <div className="col-6 col-md-2">
-                          <label className="form-label small">Start Date:</label>
-                          <input 
-                            type="date" 
-                            className="form-control"
-                            value={shiftsCustomDateRange.start}
-                            onChange={(e) => setShiftsCustomDateRange(prev => ({ ...prev, start: e.target.value }))}
-                          />
-                        </div>
-                        <div className="col-6 col-md-2">
-                          <label className="form-label small">End Date:</label>
-                          <input 
-                            type="date" 
-                            className="form-control"
-                            value={shiftsCustomDateRange.end}
-                            onChange={(e) => setShiftsCustomDateRange(prev => ({ ...prev, end: e.target.value }))}
-                          />
-                        </div>
-                      </>
-                    )}
-                    
-                    {/* View Button */}
-                    <div className={`col-12 ${shiftsTimePeriod === 'custom' ? 'col-md-4' : 'col-md-8'}`}>
-                      <button 
-                        className="btn btn-primary w-100"
-                        onClick={handleViewShiftsData}
-                        disabled={loading || (shiftsTimePeriod === 'custom' && (!shiftsCustomDateRange.start || !shiftsCustomDateRange.end))}
-                      >
-                        {loading ? (
-                          <span className="spinner-border spinner-border-sm me-2" />
-                        ) : (
-                          <i className="bi bi-eye me-2"></i>
-                        )}
-                        View Shifts Data
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Column Selection and Filters */}
-            {showShiftsTable && (
-              <div className="col-12">
-                <div className="card">
                   <div className="card-header">
-                    <h6 className="card-title mb-0">🎛️ Column Controls & Filters</h6>
+                    <h6 className="card-title mb-0">👁️ View Type</h6>
                   </div>
                   <div className="card-body">
-                    {/* Column Filters */}
-                    <div className="row">
-                      <div className="col-12">
-                        <label className="form-label small fw-bold">Filter by Columns:</label>
-                        <div className="row g-2">
-                          {getOrderedShiftsColumns().map(colKey => {
-                            const column = appsScriptColumns.find(col => col.key === colKey);
-                            return (
-                              <div key={colKey} className="col-6 col-md-3">
-                                <div className="input-group input-group-sm">
-                                  <span className="input-group-text" style={{fontSize: '0.75rem'}}>
-                                    {column?.label || colKey}
-                                  </span>
-                                  <input 
-                                    type="text"
-                                    className="form-control"
-                                    placeholder="Filter..."
-                                    value={shiftsColumnFilters[colKey] || ''}
-                                    onChange={(e) => setShiftsColumnFilters(prev => ({ 
-                                      ...prev, 
-                                      [colKey]: e.target.value 
-                                    }))}
-                                  />
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
+                    <div className="row align-items-center">
+                      <div className="col-12 col-md-6">
+                        <label className="form-label small fw-bold mb-2">Select Column View:</label>
+                        <select 
+                          className="form-select"
+                          value={selectedView}
+                          onChange={(e) => setSelectedView(e.target.value)}
+                        >
+                          {viewTypes.map(view => (
+                            <option key={view.value} value={view.value}>
+                              {view.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="col-12 col-md-6">
+                        <small className="text-muted d-block mt-3 mt-md-0">
+                          <strong>Current View:</strong> {viewTypes.find(v => v.value === selectedView)?.label || 'Complete View'}
+                          <br />
+                          <strong>Columns:</strong> {getOrderedOverviewColumns().length} columns displayed
+                        </small>
                       </div>
                     </div>
                   </div>
@@ -2598,162 +2762,510 @@ const AdminDashboard = () => {
               </div>
             )}
 
-            {/* Shifts Data Table with Editing */}
-            {showShiftsTable && (
-              <div className="col-12">
-                <div className="card">
-                  <div className="card-header d-flex justify-content-between align-items-center">
-                    <h6 className="card-title mb-0">📋 Shifts Management Table</h6>
-                    <div className="d-flex align-items-center gap-3">
-                      <small className="text-muted">
-                        Showing {getFilteredShiftsData().length} of {shiftsData.length} shifts
-                      </small>
-                      {editingShift && (
-                        <div className="d-flex gap-1">
-                          <button 
-                            className="btn btn-sm btn-success"
-                            onClick={() => handleSaveEdit(editingShift)}
-                            disabled={loading}
-                          >
-                            <i className="bi bi-check me-1"></i>Save
-                          </button>
-                          <button 
-                            className="btn btn-sm btn-secondary"
-                            onClick={handleCancelEdit}
-                          >
-                            <i className="bi bi-x me-1"></i>Cancel
-                          </button>
-                        </div>
-                      )}
+            {/* Data Table - Rebuilt from scratch with proper column mapping */}
+            {showOverviewTable && (
+              <>
+                {/* Summary Box for special time period selections */}
+                {['monthlyAvgPerEmployee','weeklyTotalPerEmployee','weeklyAvgPerEmployee','quarterlyTotalPerEmployee','quarterlyAvgPerEmployee','yearlyAvgPerEmployee','yearlyTotalPerEmployee','allTimeTotalPerEmployee','monthlyTotalPerEmployee','monthlyAverage','weeklyTotal','monthlyTotal','quarterlyTotal','yearlyTotal','allTimeTotal','allTimeAverage'].includes(selectedTimePeriod) && (
+                  <div className="col-12 mb-3">
+                    <div className="card border-info">
+                      <div className="card-header bg-info text-white">
+                        <strong>
+                          {selectedTimePeriod === 'monthlyAvgPerEmployee' && 'Monthly Average per Employee'}
+                          {selectedTimePeriod === 'weeklyTotalPerEmployee' && 'Weekly Total per Employee'}
+                          {selectedTimePeriod === 'weeklyAvgPerEmployee' && 'Weekly Average per Employee'}
+                          {selectedTimePeriod === 'quarterlyTotalPerEmployee' && 'Quarterly Total per Employee'}
+                          {selectedTimePeriod === 'quarterlyAvgPerEmployee' && 'Quarterly Average per Employee'}
+                          {selectedTimePeriod === 'yearlyAvgPerEmployee' && 'Yearly Average per Employee'}
+                          {selectedTimePeriod === 'yearlyTotalPerEmployee' && 'Yearly Total per Employee'}
+                          {selectedTimePeriod === 'allTimeTotalPerEmployee' && 'All Time Total per Employee'}
+                          {selectedTimePeriod === 'monthlyTotal' && 'Monthly Total (All Employees)'}
+                          {selectedTimePeriod === 'monthlyAverage' && 'Monthly Average (All Employees)'}
+                          {selectedTimePeriod === 'weeklyTotal' && 'Weekly Total (All Employees)'}
+                          {selectedTimePeriod === 'quarterlyTotal' && 'Quarterly Total (All Employees)'}
+                          {selectedTimePeriod === 'yearlyTotal' && 'Yearly Total (All Employees)'}
+                          {selectedTimePeriod === 'allTimeTotal' && 'All Time Total (All Employees)'}
+                          {selectedTimePeriod === 'allTimeAverage' && 'All Time Average (All Employees)'}
+                        </strong>
+                      </div>
+                      <div className="card-body">
+                        {/* Per-employee summaries */}
+                        {selectedTimePeriod === 'weeklyTotalPerEmployee' && (() => {
+                          // Group by employee and week
+                          const weekTotals = {};
+                          getFilteredData().forEach(shift => {
+                            const name = shift['Employee Name'] || 'Unknown';
+                            const dateStr = shift['Shift Date'];
+                            const duration = parseFloat(shift['Total Duration']) || 0;
+                            if (!dateStr) return;
+                            const date = new Date(dateStr);
+                            if (isNaN(date)) return;
+                            // Get ISO week number and year
+                            const getWeekYear = d => {
+                              const dt = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+                              const dayNum = dt.getUTCDay() || 7;
+                              dt.setUTCDate(dt.getUTCDate() + 4 - dayNum);
+                              const yearStart = new Date(Date.UTC(dt.getUTCFullYear(),0,1));
+                              const weekNum = Math.ceil((((dt - yearStart) / 86400000) + 1)/7);
+                              return { year: dt.getUTCFullYear(), week: weekNum };
+                            };
+                            const { year, week } = getWeekYear(date);
+                            const weekKey = `${year}-W${String(week).padStart(2,'0')}`;
+                            const key = `${name}__${weekKey}`;
+                            weekTotals[key] = (weekTotals[key] || 0) + duration;
+                          });
+                          // Build rows: Employee, Week, Total
+                          const rows = Object.entries(weekTotals).map(([key, total]) => {
+                            const [name, weekKey] = key.split('__');
+                            return (
+                              <tr key={key}>
+                                <td>{name}</td>
+                                <td>{weekKey}</td>
+                                <td>{total.toFixed(2)} h</td>
+                              </tr>
+                            );
+                          });
+                          return (
+                            <table className="table table-bordered table-sm mb-0">
+                              <thead>
+                                <tr><th>Employee</th><th>Week</th><th>Total Hours</th></tr>
+                              </thead>
+                              <tbody>{rows}</tbody>
+                            </table>
+                          );
+                        })()}
+                        {selectedTimePeriod === 'monthlyTotalPerEmployee' && (() => {
+                          // Group by employee and month
+                          const monthTotals = {};
+                          getFilteredData().forEach(shift => {
+                            const name = shift['Employee Name'] || 'Unknown';
+                            const dateStr = shift['Shift Date'];
+                            const duration = parseFloat(shift['Total Duration']) || 0;
+                            if (!dateStr) return;
+                            const date = new Date(dateStr);
+                            if (isNaN(date)) return;
+                            const monthKey = `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}`;
+                            const key = `${name}__${monthKey}`;
+                            monthTotals[key] = (monthTotals[key] || 0) + duration;
+                          });
+                          // Build rows: Employee, Month, Total
+                          const rows = Object.entries(monthTotals).map(([key, total]) => {
+                            const [name, monthKey] = key.split('__');
+                            const [year, month] = monthKey.split('-');
+                            const monthName = new Date(year, month-1).toLocaleString('default', { month: 'short' });
+                            return (
+                              <tr key={key}>
+                                <td>{name}</td>
+                                <td>{monthName} {year}</td>
+                                <td>{total.toFixed(2)} h</td>
+                              </tr>
+                            );
+                          });
+                          return (
+                            <table className="table table-bordered table-sm mb-0">
+                              <thead>
+                                <tr><th>Employee</th><th>Month</th><th>Total Hours</th></tr>
+                              </thead>
+                              <tbody>{rows}</tbody>
+                            </table>
+                          );
+                        })()}
+                        {selectedTimePeriod === 'monthlyAvgPerEmployee' && (() => {
+                          // Group by employee and month, calculate average
+                          const monthTotals = {};
+                          const monthCounts = {};
+                          getFilteredData().forEach(shift => {
+                            const name = shift['Employee Name'] || 'Unknown';
+                            const dateStr = shift['Shift Date'];
+                            const duration = parseFloat(shift['Total Duration']) || 0;
+                            if (!dateStr) return;
+                            const date = new Date(dateStr);
+                            if (isNaN(date)) return;
+                            const monthKey = `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}`;
+                            const key = `${name}__${monthKey}`;
+                            monthTotals[key] = (monthTotals[key] || 0) + duration;
+                            monthCounts[key] = (monthCounts[key] || 0) + (duration > 0 ? 1 : 0);
+                          });
+                          const rows = Object.entries(monthTotals).map(([key, total]) => {
+                            const [name, monthKey] = key.split('__');
+                            const [year, month] = monthKey.split('-');
+                            const monthName = new Date(year, month-1).toLocaleString('default', { month: 'short' });
+                            const avg = monthCounts[key] > 0 ? (total/monthCounts[key]) : 0;
+                            return (
+                              <tr key={key}>
+                                <td>{name}</td>
+                                <td>{monthName} {year}</td>
+                                <td>{avg.toFixed(2)} h</td>
+                              </tr>
+                            );
+                          });
+                          return (
+                            <table className="table table-bordered table-sm mb-0">
+                              <thead>
+                                <tr><th>Employee</th><th>Month</th><th>Average Hours</th></tr>
+                              </thead>
+                              <tbody>{rows}</tbody>
+                            </table>
+                          );
+                        })()}
+                        {selectedTimePeriod === 'weeklyAvgPerEmployee' && (() => {
+                          // Group by employee and week, calculate average
+                          const weekTotals = {};
+                          const weekCounts = {};
+                          getFilteredData().forEach(shift => {
+                            const name = shift['Employee Name'] || 'Unknown';
+                            const dateStr = shift['Shift Date'];
+                            const duration = parseFloat(shift['Total Duration']) || 0;
+                            if (!dateStr) return;
+                            const date = new Date(dateStr);
+                            if (isNaN(date)) return;
+                            const getWeekYear = d => {
+                              const dt = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+                              const dayNum = dt.getUTCDay() || 7;
+                              dt.setUTCDate(dt.getUTCDate() + 4 - dayNum);
+                              const yearStart = new Date(Date.UTC(dt.getUTCFullYear(),0,1));
+                              const weekNum = Math.ceil((((dt - yearStart) / 86400000) + 1)/7);
+                              return { year: dt.getUTCFullYear(), week: weekNum };
+                            };
+                            const { year, week } = getWeekYear(date);
+                            const weekKey = `${year}-W${String(week).padStart(2,'0')}`;
+                            const key = `${name}__${weekKey}`;
+                            weekTotals[key] = (weekTotals[key] || 0) + duration;
+                            weekCounts[key] = (weekCounts[key] || 0) + (duration > 0 ? 1 : 0);
+                          });
+                          const rows = Object.entries(weekTotals).map(([key, total]) => {
+                            const [name, weekKey] = key.split('__');
+                            const avg = weekCounts[key] > 0 ? (total/weekCounts[key]) : 0;
+                            return (
+                              <tr key={key}>
+                                <td>{name}</td>
+                                <td>{weekKey}</td>
+                                <td>{avg.toFixed(2)} h</td>
+                              </tr>
+                            );
+                          });
+                          return (
+                            <table className="table table-bordered table-sm mb-0">
+                              <thead>
+                                <tr><th>Employee</th><th>Week</th><th>Average Hours</th></tr>
+                              </thead>
+                              <tbody>{rows}</tbody>
+                            </table>
+                          );
+                        })()}
+                        {selectedTimePeriod === 'quarterlyTotalPerEmployee' && (() => {
+                          // Group by employee and quarter
+                          const quarterTotals = {};
+                          getFilteredData().forEach(shift => {
+                            const name = shift['Employee Name'] || 'Unknown';
+                            const dateStr = shift['Shift Date'];
+                            const duration = parseFloat(shift['Total Duration']) || 0;
+                            if (!dateStr) return;
+                            const date = new Date(dateStr);
+                            if (isNaN(date)) return;
+                            const quarter = Math.floor(date.getMonth()/3)+1;
+                            const quarterKey = `${date.getFullYear()}-Q${quarter}`;
+                            const key = `${name}__${quarterKey}`;
+                            quarterTotals[key] = (quarterTotals[key] || 0) + duration;
+                          });
+                          const rows = Object.entries(quarterTotals).map(([key, total]) => {
+                            const [name, quarterKey] = key.split('__');
+                            return (
+                              <tr key={key}>
+                                <td>{name}</td>
+                                <td>{quarterKey}</td>
+                                <td>{total.toFixed(2)} h</td>
+                              </tr>
+                            );
+                          });
+                          return (
+                            <table className="table table-bordered table-sm mb-0">
+                              <thead>
+                                <tr><th>Employee</th><th>Quarter</th><th>Total Hours</th></tr>
+                              </thead>
+                              <tbody>{rows}</tbody>
+                            </table>
+                          );
+                        })()}
+                        {selectedTimePeriod === 'quarterlyAvgPerEmployee' && (() => {
+                          // Group by employee and quarter, calculate average
+                          const quarterTotals = {};
+                          const quarterCounts = {};
+                          getFilteredData().forEach(shift => {
+                            const name = shift['Employee Name'] || 'Unknown';
+                            const dateStr = shift['Shift Date'];
+                            const duration = parseFloat(shift['Total Duration']) || 0;
+                            if (!dateStr) return;
+                            const date = new Date(dateStr);
+                            if (isNaN(date)) return;
+                            const quarter = Math.floor(date.getMonth()/3)+1;
+                            const quarterKey = `${date.getFullYear()}-Q${quarter}`;
+                            const key = `${name}__${quarterKey}`;
+                            quarterTotals[key] = (quarterTotals[key] || 0) + duration;
+                            quarterCounts[key] = (quarterCounts[key] || 0) + (duration > 0 ? 1 : 0);
+                          });
+                          const rows = Object.entries(quarterTotals).map(([key, total]) => {
+                            const [name, quarterKey] = key.split('__');
+                            const avg = quarterCounts[key] > 0 ? (total/quarterCounts[key]) : 0;
+                            return (
+                              <tr key={key}>
+                                <td>{name}</td>
+                                <td>{quarterKey}</td>
+                                <td>{avg.toFixed(2)} h</td>
+                              </tr>
+                            );
+                          });
+                          return (
+                            <table className="table table-bordered table-sm mb-0">
+                              <thead>
+                                <tr><th>Employee</th><th>Quarter</th><th>Average Hours</th></tr>
+                              </thead>
+                              <tbody>{rows}</tbody>
+                            </table>
+                          );
+                        })()}
+                        {selectedTimePeriod === 'yearlyTotalPerEmployee' && (() => {
+                          // Group by employee and year
+                          const yearTotals = {};
+                          getFilteredData().forEach(shift => {
+                            const name = shift['Employee Name'] || 'Unknown';
+                            const dateStr = shift['Shift Date'];
+                            const duration = parseFloat(shift['Total Duration']) || 0;
+                            if (!dateStr) return;
+                            const date = new Date(dateStr);
+                            if (isNaN(date)) return;
+                            const yearKey = `${date.getFullYear()}`;
+                            const key = `${name}__${yearKey}`;
+                            yearTotals[key] = (yearTotals[key] || 0) + duration;
+                          });
+                          const rows = Object.entries(yearTotals).map(([key, total]) => {
+                            const [name, yearKey] = key.split('__');
+                            return (
+                              <tr key={key}>
+                                <td>{name}</td>
+                                <td>{yearKey}</td>
+                                <td>{total.toFixed(2)} h</td>
+                              </tr>
+                            );
+                          });
+                          return (
+                            <table className="table table-bordered table-sm mb-0">
+                              <thead>
+                                <tr><th>Employee</th><th>Year</th><th>Total Hours</th></tr>
+                              </thead>
+                              <tbody>{rows}</tbody>
+                            </table>
+                          );
+                        })()}
+                        {selectedTimePeriod === 'yearlyAvgPerEmployee' && (() => {
+                          // Group by employee and year, calculate average
+                          const yearTotals = {};
+                          const yearCounts = {};
+                          getFilteredData().forEach(shift => {
+                            const name = shift['Employee Name'] || 'Unknown';
+                            const dateStr = shift['Shift Date'];
+                            const duration = parseFloat(shift['Total Duration']) || 0;
+                            if (!dateStr) return;
+                            const date = new Date(dateStr);
+                            if (isNaN(date)) return;
+                            const yearKey = `${date.getFullYear()}`;
+                            const key = `${name}__${yearKey}`;
+                            yearTotals[key] = (yearTotals[key] || 0) + duration;
+                            yearCounts[key] = (yearCounts[key] || 0) + (duration > 0 ? 1 : 0);
+                          });
+                          const rows = Object.entries(yearTotals).map(([key, total]) => {
+                            const [name, yearKey] = key.split('__');
+                            const avg = yearCounts[key] > 0 ? (total/yearCounts[key]) : 0;
+                            return (
+                              <tr key={key}>
+                                <td>{name}</td>
+                                <td>{yearKey}</td>
+                                <td>{avg.toFixed(2)} h</td>
+                              </tr>
+                            );
+                          });
+                          return (
+                            <table className="table table-bordered table-sm mb-0">
+                              <thead>
+                                <tr><th>Employee</th><th>Year</th><th>Average Hours</th></tr>
+                              </thead>
+                              <tbody>{rows}</tbody>
+                            </table>
+                          );
+                        })()}
+                        {selectedTimePeriod === 'allTimeTotalPerEmployee' && (() => {
+                          // Group by employee, sum all time
+                          const totals = {};
+                          getFilteredData().forEach(shift => {
+                            const name = shift['Employee Name'] || 'Unknown';
+                            const duration = parseFloat(shift['Total Duration']) || 0;
+                            totals[name] = (totals[name] || 0) + duration;
+                          });
+                          const rows = Object.entries(totals).map(([name, total]) => (
+                            <tr key={name}>
+                              <td>{name}</td>
+                              <td>All Time</td>
+                              <td>{total.toFixed(2)} h</td>
+                            </tr>
+                          ));
+                          return (
+                            <table className="table table-bordered table-sm mb-0">
+                              <thead>
+                                <tr><th>Employee</th><th>Period</th><th>Total Hours</th></tr>
+                              </thead>
+                              <tbody>{rows}</tbody>
+                            </table>
+                          );
+                        })()}
+                        {/* Overall summaries */}
+                        {['monthlyTotal','monthlyAverage','weeklyTotal','quarterlyTotal','yearlyTotal','allTimeTotal','allTimeAverage'].includes(selectedTimePeriod) && (() => {
+                          const durations = getFilteredData().map(shift => parseFloat(shift['Total Duration']) || 0).filter(d => d > 0);
+                          let value = 0;
+                          let label = '';
+                          if (selectedTimePeriod.endsWith('Average')) {
+                            value = durations.length > 0 ? (durations.reduce((a, b) => a + b, 0) / durations.length) : 0;
+                            label = 'Average';
+                          } else {
+                            value = durations.reduce((a, b) => a + b, 0);
+                            label = 'Total';
+                          }
+                          return <div><strong>{label} Hours:</strong> {value.toFixed(2)} h</div>;
+                        })()}
+                      </div>
                     </div>
                   </div>
-                  <div className="card-body">
-                    <div className="table-responsive">
-                      <table className="table table-striped table-hover table-sm">
-                        <thead className="table-dark">
-                          <tr>
-                            {getOrderedShiftsColumns().map(colKey => {
-                              const column = appsScriptColumns.find(col => col.key === colKey);
-                              const isSortable = ['Employee Name', 'Employee ID', 'Shift Date', 'Shift Type', 'First Start Time', 'Last End Time', 'Status', 'Total Duration', 'Last Updated', 'Created At', 'Shift ID'].includes(colKey);
-                              return (
-                                <th key={colKey} className={`text-nowrap ${isSortable ? 'user-select-none position-relative' : ''}`} 
-                                    style={isSortable ? {cursor: 'pointer', backgroundColor: sortConfig.key === colKey ? '#e3f2fd' : ''} : {}}
-                                    onClick={isSortable ? () => handleSort(colKey) : undefined}>
-                                  <div className="d-flex align-items-center justify-content-between">
-                                    <span>{column?.label || colKey}</span>
-                                    {isSortable && (
-                                      <span className={`ms-1 ${sortConfig.key === colKey ? 'text-primary fw-bold' : 'text-muted'}`} style={{fontSize: '14px'}}>
-                                        {sortConfig.key === colKey ? (
-                                          sortConfig.direction === 'asc' ? '↑' : '↓'
-                                        ) : '↕'}
-                                      </span>
-                                    )}
-                                  </div>
-                                </th>
-                              );
-                            })}
-                            <th className="text-nowrap">Actions</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {getFilteredShiftsData().map((shift, index) => (
-                            <tr key={shift['Shift ID'] || index}>
-                              {getOrderedShiftsColumns().map(colKey => (
-                                <td key={colKey} className="text-nowrap">
-                                  {editingShift === shift['Shift ID'] && ['Employee ID', 'Employee Name', 'Shift Date', 'Shift Type', 'First Start Time', 'Last End Time', 'Status'].includes(colKey) ? (
-                                    // Edit mode
-                                    colKey === 'Status' ? (
-                                      <select 
-                                        className="form-select form-select-sm"
-                                        value={editFormData[colKey] || ''}
-                                        onChange={(e) => setEditFormData(prev => ({ ...prev, [colKey]: e.target.value }))}
-                                      >
-                                        <option value="DRAFT">DRAFT</option>
-                                        <option value="ACTIVE">ACTIVE</option>
-                                        <option value="COMPLETED">COMPLETED</option>
-                                      </select>
-                                    ) : colKey === 'Shift Date' ? (
-                                      <input 
-                                        type="date"
-                                        className="form-control form-control-sm"
-                                        value={editFormData[colKey] || ''}
-                                        onChange={(e) => setEditFormData(prev => ({ ...prev, [colKey]: e.target.value }))}
-                                      />
-                                    ) : colKey === 'First Start Time' || colKey === 'Last End Time' ? (
-                                      <input 
-                                        type="time"
-                                        className="form-control form-control-sm"
-                                        value={editFormData[colKey] || ''}
-                                        onChange={(e) => setEditFormData(prev => ({ ...prev, [colKey]: e.target.value }))}
-                                      />
-                                    ) : (
-                                      <input 
-                                        type="text"
-                                        className="form-control form-control-sm"
-                                        value={editFormData[colKey] || ''}
-                                        onChange={(e) => setEditFormData(prev => ({ ...prev, [colKey]: e.target.value }))}
-                                      />
-                                    )
-                                  ) : (
-                                    // View mode
-                                    colKey === 'Status' ? (
-                                      <span>
-                                        <span className={`badge ${
-                                          (shift['_smartStatus'] || shift[colKey]) === 'ACTIVE' ? 'bg-success' :
-                                          (shift['_smartStatus'] || shift[colKey]) === 'COMPLETED' ? 'bg-primary' :
-                                          (shift['_smartStatus'] || shift[colKey]) === 'OFFLINE' ? 'bg-secondary' :
-                                          'bg-warning'
-                                        }`}>
-                                          {shift['_smartStatus'] || shift[colKey] || 'DRAFT'}
-                                        </span>
-                                        {shift['_statusCalculated'] && (
-                                          <small className="text-muted ms-1" title="Status calculated by smart logic">📊</small>
-                                        )}
-                                      </span>
-                                    ) : (
-                                      formatCellData(shift[colKey], colKey)
-                                    )
-                                  )}
-                                </td>
-                              ))}
-                              <td className="text-nowrap">
-                                {editingShift === shift['Shift ID'] ? (
-                                  <span className="text-muted small">Editing...</span>
-                                ) : (
-                                  <div className="d-flex gap-1">
-                                    <button 
-                                      className="btn btn-sm btn-outline-primary"
-                                      onClick={() => handleEditShift(shift)}
-                                      disabled={loading || editingShift}
-                                      title="Edit Shift"
-                                    >
-                                      <i className="bi bi-pencil"></i>
-                                    </button>
-                                    <button 
-                                      className="btn btn-sm btn-outline-danger"
-                                      onClick={() => handleDeleteShift(shift['Shift ID'], shift['Employee Name'])}
-                                      disabled={loading || editingShift}
-                                      title="Delete Shift"
-                                    >
-                                      <i className="bi bi-trash"></i>
-                                    </button>
-                                  </div>
-                                )}
-                              </td>
+                )}
+                <div className="col-12">
+                  <div className="card">
+                    <div className="card-header d-flex justify-content-between align-items-center">
+                      <h6 className="card-title mb-0">📋 Shift Data Table</h6>
+                      <small className="text-muted">
+                        Showing {getFilteredData().length} of {overviewData.length} shifts
+                      </small>
+                    </div>
+                    <div className="card-body">
+                      <div className="table-responsive">
+                        <table className="table table-striped table-hover table-sm">
+                          <thead className="table-dark">
+                            <tr>
+                              {/* Render table headers from selected view columns */}
+                              {getOrderedOverviewColumns().map(colKey => {
+                                const column = appsScriptColumns.find(col => col.key === colKey);
+                                return (
+                                  <th key={colKey} className="text-nowrap" style={{fontSize: '0.85rem'}}>
+                                    {column?.label || colKey}
+                                  </th>
+                                );
+                              })}
                             </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                      
-                      {getFilteredShiftsData().length === 0 && (
-                        <div className="text-center py-4">
-                          <p className="text-muted mb-0">No shifts match your filters</p>
-                        </div>
-                      )}
+                          </thead>
+                          <tbody>
+                            {getFilteredData().length > 0 ? (
+                              getFilteredData().map((shift, index) => (
+                                <tr key={shift['Shift ID'] || index}>
+                                  {/* Render table cells matching selected view columns */}
+                                  {getOrderedOverviewColumns().map(colKey => {
+                                    const column = appsScriptColumns.find(col => col.key === colKey);
+                                    const cellValue = shift[colKey];
+                                    return (
+                                      <td key={colKey} className="text-nowrap" style={{fontSize: '0.8rem'}}>
+                                        {/* Special rendering for Status column */}
+                                        {colKey === 'Status' ? (
+                                          <span>
+                                            <span className={`badge ${
+                                              (shift['_smartStatus'] || cellValue) === 'ACTIVE' ? 'bg-success' :
+                                              (shift['_smartStatus'] || cellValue) === 'COMPLETED' ? 'bg-primary' :
+                                              (shift['_smartStatus'] || cellValue) === 'ON BREAK' ? 'bg-warning text-dark' :
+                                              (shift['_smartStatus'] || cellValue) === 'OFFLINE' ? 'bg-secondary' :
+                                              'bg-info text-dark'
+                                            }`}>
+                                              {shift['_smartStatus'] || cellValue || 'DRAFT'}
+                                            </span>
+                                            {shift['_statusCalculated'] && (
+                                              <small className="text-muted ms-1" title="Status calculated by smart logic">
+                                                📊
+                                              </small>
+                                            )}
+                                          </span>
+                                        ) : colKey === 'Total Duration' ? (
+                                          // Special rendering for Total Duration with fallback calculation
+                                          formatCellData(cellValue, colKey, shift)
+                                        ) : colKey === 'Segments Data' || colKey === 'Initial Segment Data' ? (
+                                          // Make cell clickable to show modal with full data
+                                          <button
+                                            type="button"
+                                            className="btn btn-link p-0 font-monospace text-truncate d-inline-block"
+                                            style={{maxWidth: '120px', fontSize: '0.7rem', verticalAlign: 'middle'}}
+                                            title="Click to view full data"
+                                            onClick={() => {
+                                              setSegmentModalTitle(colKey + ' for Shift ' + (shift['Shift ID'] || ''));
+                                              setSegmentModalContent(cellValue || '-');
+                                              setSegmentModalOpen(true);
+                                            }}
+                                          >
+                                            {cellValue && cellValue.length > 30
+                                              ? cellValue.slice(0, 30) + '...'
+                                              : cellValue || '-'}
+                                          </button>
+                                        ) : colKey === 'Updated' ? (
+                                          // Special rendering for Updated column (boolean)
+                                          <span className={`badge ${
+                                            cellValue === 'Yes' || cellValue === true || cellValue === 'TRUE' 
+                                              ? 'bg-success' 
+                                              : 'bg-secondary'
+                                          }`}>
+                                            {cellValue === 'Yes' || cellValue === true || cellValue === 'TRUE' ? 'Yes' : 'No'}
+                                          </span>
+                                        ) : (
+                                          // Default rendering with formatCellData helper
+                                          formatCellData(cellValue, colKey, shift)
+                                        )}
+                                      </td>
+                                    );
+                                  })}
+                                </tr>
+                              ))
+                            ) : (
+                              <tr>
+                                <td colSpan={getOrderedOverviewColumns().length} className="text-center py-4">
+                                  <p className="text-muted mb-0">No shifts match your filters</p>
+                                </td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
+
+                {/* Segment Data Modal */}
+                {segmentModalOpen && (
+                  <div 
+                    className="modal fade show" 
+                    style={{display: 'block', background: 'rgba(0,0,0,0.5)'}} 
+                    tabIndex={-1}
+                    role="dialog"
+                  >
+                    <div className="modal-dialog modal-dialog-centered" role="document">
+                      <div className="modal-content">
+                        <div className="modal-header">
+                          <h5 className="modal-title">{segmentModalTitle}</h5>
+                          <button type="button" className="btn-close" aria-label="Close" onClick={() => setSegmentModalOpen(false)}></button>
+                        </div>
+                        <div className="modal-body">
+                          <pre style={{fontSize: '0.8rem', whiteSpace: 'pre-wrap', wordBreak: 'break-all'}}>{segmentModalContent}</pre>
+                        </div>
+                        <div className="modal-footer">
+                          <button type="button" className="btn btn-secondary" onClick={() => setSegmentModalOpen(false)}>
+                            Close
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </>
             )}
           </div>
         )}
@@ -2869,402 +3381,9 @@ const AdminDashboard = () => {
           </div>
         )}
 
-        {/* System Management Tab */}
-        {activeTab === 'system' && (
-          <div className="row">
-            <div className="col-12">
-              <h2 className="h4 mb-3">⚙️ System Management</h2>
-              
-              {/* SimpleFilterTable Information */}
-              <div className="card mb-3">
-                <div className="card-header">
-                  <h5 className="card-title mb-0">📊 SimpleFilterTable System</h5>
-                </div>
-                <div className="card-body">
-                  <p className="text-muted">
-                    The SimpleFilterTable provides powerful filtering and reporting capabilities directly in Google Sheets.
-                    It works alongside this React admin system to give you complete data control.
-                  </p>
-                  <div className="alert alert-info">
-                    <strong>📌 How to use SimpleFilterTable:</strong>
-                    <ol className="mb-0 mt-2">
-                      <li>Open your Google Sheets document</li>
-                      <li>Navigate to the "SimpleFilterTable" sheet</li>
-                      <li>Use the dropdown filters to view data by date, employee, status, etc.</li>
-                      <li>The data updates automatically as staff log their shifts</li>
-                    </ol>
-                  </div>
-                  <div className="d-flex gap-2">
-                    <button 
-                      className="btn btn-primary"
-                      onClick={handleCreateSimpleFilterTable}
-                      disabled={loading}
-                    >
-                      Create/Update SimpleFilterTable
-                    </button>
-                    <button className="btn btn-outline-primary">
-                      <i className="bi bi-box-arrow-up-right me-1"></i>
-                      Open in Google Sheets
-                    </button>
-                  </div>
-                </div>
-              </div>
+        {/* System Management Tab removed */}
 
-              {/* System Actions */}
-              <div className="card">
-                <div className="card-header">
-                  <h5 className="card-title mb-0">🔧 System Actions</h5>
-                </div>
-                <div className="card-body">
-                  <div className="row g-3">
-                    <div className="col-12 col-md-6">
-                      <div className="d-grid">
-                        <button 
-                          className="btn btn-success"
-                          onClick={handleSetupProductionSystem}
-                          disabled={loading}
-                        >
-                          <i className="bi bi-gear-fill me-2"></i>
-                          Setup Production System
-                        </button>
-                        <small className="text-muted mt-1">
-                          Initialize all required sheets and configurations
-                        </small>
-                      </div>
-                    </div>
-                    <div className="col-12 col-md-6">
-                      <div className="d-grid">
-                        <button 
-                          className="btn btn-warning"
-                          onClick={handleCleanupOldSheets}
-                          disabled={loading}
-                        >
-                          <i className="bi bi-trash me-2"></i>
-                          Cleanup Old Sheets
-                        </button>
-                        <small className="text-muted mt-1">
-                          Remove unnecessary sheets and optimize performance
-                        </small>
-                      </div>
-                    </div>
-                    <div className="col-12 col-md-6">
-                      <div className="d-grid">
-                        <button 
-                          className="btn btn-secondary"
-                          onClick={handleDebugSheetStructure}
-                          disabled={loading}
-                        >
-                          <i className="bi bi-bug me-2"></i>
-                          Debug Sheet Structure
-                        </button>
-                        <small className="text-muted mt-1">
-                          Check column mapping and data structure
-                        </small>
-                      </div>
-                    </div>
-                    <div className="col-12 col-md-6">
-                      <div className="d-grid">
-                        <button 
-                          className="btn btn-info"
-                          onClick={loadDashboardData}
-                          disabled={loading}
-                        >
-                          <i className="bi bi-arrow-clockwise me-2"></i>
-                          Refresh Data
-                        </button>
-                        <small className="text-muted mt-1">
-                          Reload all dashboard statistics and data
-                        </small>
-                      </div>
-                    </div>
-                    <div className="col-12">
-                      <h6 className="text-muted mb-3">📥 Data Export Options</h6>
-                    </div>
-                    <div className="col-12 col-md-3">
-                      <div className="d-grid">
-                        <button 
-                          className="btn btn-outline-primary"
-                          onClick={handleExportStaffData}
-                          disabled={loading}
-                        >
-                          <i className="bi bi-people me-2"></i>
-                          Export Staff Data
-                        </button>
-                        <small className="text-muted mt-1">
-                          Download staff list as CSV
-                        </small>
-                      </div>
-                    </div>
-                    <div className="col-12 col-md-3">
-                      <div className="d-grid">
-                        <button 
-                          className="btn btn-outline-primary"
-                          onClick={handleExportShiftsData}
-                          disabled={loading}
-                        >
-                          <i className="bi bi-clock me-2"></i>
-                          Export Shifts Data
-                        </button>
-                        <small className="text-muted mt-1">
-                          Download current month shifts as CSV
-                        </small>
-                      </div>
-                    </div>
-                    <div className="col-12 col-md-3">
-                      <div className="d-grid">
-                        <button 
-                          className="btn btn-outline-success"
-                          onClick={handleExportAllData}
-                          disabled={loading}
-                        >
-                          <i className="bi bi-download me-2"></i>
-                          Complete Backup
-                        </button>
-                        <small className="text-muted mt-1">
-                          JSON or CSV format (choose when clicked)
-                        </small>
-                      </div>
-                    </div>
-                    <div className="col-12 col-md-3">
-                      <div className="d-grid">
-                        <button 
-                          className="btn btn-outline-warning"
-                          onClick={handleConvertJSONToCSV}
-                          disabled={loading}
-                        >
-                          <i className="bi bi-arrow-repeat me-2"></i>
-                          Convert JSON→CSV
-                        </button>
-                        <small className="text-muted mt-1">
-                          Upload JSON backup to convert to CSV
-                        </small>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Experimental Tab */}
-        {activeTab === 'experimental' && (
-          <div className="row">
-            <div className="col-12">
-              <h2 className="h4 mb-3">🧪 AI & Experimental Features</h2>
-              
-              {/* Backend Test */}
-              <div className="card mb-4">
-                <div className="card-header">
-                  <h5 className="card-title mb-0">🔍 Backend Status</h5>
-                </div>
-                <div className="card-body">
-                  <p className="text-muted">
-                    Check if your backend has the latest AI analysis code deployed.
-                  </p>
-                  
-                  <div className="d-grid">
-                    <button 
-                      className="btn btn-outline-warning"
-                      onClick={handleTestBackend}
-                      disabled={loading}
-                    >
-                      {loading ? (
-                        <>
-                          <span className="spinner-border spinner-border-sm me-2" />
-                          Testing...
-                        </>
-                      ) : (
-                        <>
-                          <i className="bi bi-cloud-check me-2"></i>
-                          Test Backend Version
-                        </>
-                      )}
-                    </button>
-                  </div>
-                </div>
-              </div>
-              
-              {/* Simple AI Prompt */}
-              <div className="card mb-4">
-                <div className="card-header">
-                  <h5 className="card-title mb-0">🤖 AI Analysis</h5>
-                </div>
-                <div className="card-body">
-                  <p className="text-muted">
-                    Ask any question about your staff data and get real analysis.
-                  </p>
-                  
-                  <div className="mb-3">
-                    <label className="form-label">Enter your question:</label>
-                    <textarea
-                      className="form-control"
-                      rows="3"
-                      value={customPrompt}
-                      onChange={(e) => setCustomPrompt(e.target.value)}
-                      placeholder="Type your question here... (e.g., who is doing less work?)"
-                    />
-                  </div>
-                  
-                  <div className="d-grid">
-                    <button 
-                      className="btn btn-primary"
-                      onClick={handleEnhancedAIAnalysis}
-                      disabled={aiLoading || !customPrompt.trim()}
-                    >
-                      {aiLoading ? (
-                        <>
-                          <span className="spinner-border spinner-border-sm me-2" />
-                          Processing...
-                        </>
-                      ) : (
-                        <>
-                          <i className="bi bi-send me-2"></i>
-                          Send
-                        </>
-                      )}
-                    </button>
-                  </div>
-                  
-                  {/* AI Response Display */}
-                  {aiResponse && (
-                    <div className="mt-4">
-                      <div className="alert alert-success">
-                        <h6 className="alert-heading">🤖 AI Response:</h6>
-                        <div className="mb-3" style={{ whiteSpace: 'pre-wrap' }}>{aiResponse}</div>
-                        {lastAnalysis && (
-                          <div className="border-top pt-2 mt-2">
-                            <small className="text-muted">
-                              <strong>📊 Analysis Details:</strong><br/>
-                              • Data Sources: {lastAnalysis.dataSource}<br/>
-                              • Confidence: {lastAnalysis.confidence}%<br/>
-                              • Processing Time: {lastAnalysis.processingTime}ms<br/>
-                              • Timestamp: {new Date(lastAnalysis.timestamp).toLocaleString()}
-                            </small>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Experimental AI Features */}
-              <div className="card mb-4">
-                <div className="card-header">
-                  <h5 className="card-title mb-0">🔬 Cutting-Edge Experiments</h5>
-                </div>
-                <div className="card-body">
-                  <p className="text-muted">
-                    Experimental AI features for advanced workforce analytics and insights.
-                  </p>
-                  
-                  <div className="mb-3">
-                    <label className="form-label">Select Experiment:</label>
-                    <select 
-                      className="form-select"
-                      value={selectedExperiment}
-                      onChange={(e) => setSelectedExperiment(e.target.value)}
-                    >
-                      <option value="data-insights">📊 Deep Data Insights</option>
-                      <option value="pattern-prediction">🔮 Pattern Prediction</option>
-                      <option value="optimization-engine">⚡ Optimization Engine</option>
-                      <option value="anomaly-analysis">🚨 Advanced Anomaly Analysis</option>
-                      <option value="workforce-modeling">👥 Workforce Modeling</option>
-                    </select>
-                  </div>
-                  
-                  <button 
-                    className="btn btn-warning"
-                    onClick={() => handleExperimentalAI(selectedExperiment)}
-                    disabled={experimentalLoading}
-                  >
-                    {experimentalLoading ? (
-                      <>
-                        <span className="spinner-border spinner-border-sm me-2" />
-                        Running Experiment...
-                      </>
-                    ) : (
-                      <>
-                        <i className="bi bi-play-circle me-2"></i>
-                        Run Experiment
-                      </>
-                    )}
-                  </button>
-                  
-                  {/* Experiment Results */}
-                  {experimentResults.length > 0 && (
-                    <div className="mt-4">
-                      <h6>🧪 Experiment Results:</h6>
-                      {experimentResults.map((result) => (
-                        <div key={result.id} className="card mb-2">
-                          <div className="card-body">
-                            <h6 className="card-title">{result.type.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</h6>
-                            {/* Display user-friendly text if available, otherwise fall back to JSON */}
-                            {result.result?.result?.analysisText ? (
-                              <div className="card-text" style={{ whiteSpace: 'pre-line', fontFamily: 'inherit' }}>
-                                {result.result.result.analysisText}
-                              </div>
-                            ) : (
-                              <p className="card-text small">{JSON.stringify(result.result, null, 2)}</p>
-                            )}
-                            <small className="text-muted">
-                              {new Date(result.timestamp).toLocaleString()}
-                            </small>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* AI Insights Dashboard */}
-              <div className="card">
-                <div className="card-header">
-                  <h5 className="card-title mb-0">📈 AI Insights Dashboard</h5>
-                </div>
-                <div className="card-body">
-                  <button 
-                    className="btn btn-info mb-3"
-                    onClick={loadAIInsightsDashboard}
-                    disabled={loading}
-                  >
-                    <i className="bi bi-graph-up me-2"></i>
-                    Load AI Insights
-                  </button>
-                  
-                  {aiInsights && (
-                    <div className="row g-3">
-                      <div className="col-12 col-md-6">
-                        <div className="card card-body text-center">
-                          <h6 className="text-primary">Productivity Score</h6>
-                          <h4>{aiInsights.productivityScore || 0}%</h4>
-                        </div>
-                      </div>
-                      <div className="col-12 col-md-6">
-                        <div className="card card-body text-center">
-                          <h6 className="text-success">Efficiency Rating</h6>
-                          <h4>{aiInsights.efficiencyRating || 0}/10</h4>
-                        </div>
-                      </div>
-                      <div className="col-12">
-                        <div className="card card-body">
-                          <h6>🔍 Key Insights:</h6>
-                          <ul className="mb-0">
-                            {(aiInsights.insights || []).map((insight, index) => (
-                              <li key={index}>{insight}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
+        {/* Experimental Tab removed */}
       </div>
 
       {/* Add Staff Modal */}

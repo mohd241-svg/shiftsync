@@ -9,6 +9,7 @@ const StaffDashboard = () => {
   const [activeTab, setActiveTab] = useState('shift-entry');
   const [statusUpdateLoading, setStatusUpdateLoading] = useState(false);
   const [lastUpdateTime, setLastUpdateTime] = useState(null);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
 
   // Automatic status update on portal load
   useEffect(() => {
@@ -46,8 +47,11 @@ const StaffDashboard = () => {
       if (result.success) {
         alert(`✅ Status update completed!\n${result.message}`);
         setLastUpdateTime(new Date());
-        // Trigger refresh of current tab content
-        window.location.reload();
+        
+        // Trigger fresh data refresh in components instead of full page reload
+        setRefreshTrigger(prev => prev + 1);
+        console.log('🔄 Triggering fresh data refresh in components');
+        
       } else {
         alert(`⚠️ Status update completed with warnings:\n${result.message}`);
       }
@@ -59,14 +63,21 @@ const StaffDashboard = () => {
     }
   };
 
+  // Handle tab changes with fresh data fetch
+  const handleTabChange = (newTab) => {
+    console.log(`🔄 Tab changed from ${activeTab} to ${newTab} - triggering fresh data`);
+    setActiveTab(newTab);
+    setRefreshTrigger(prev => prev + 1);
+  };
+
   const renderContent = () => {
     switch (activeTab) {
       case 'shift-entry':
-        return <ShiftEntry />;
+        return <ShiftEntry key={`shift-entry-${refreshTrigger}`} refreshTrigger={refreshTrigger} />;
       case 'shift-history':
-        return <ShiftHistory />;
+        return <ShiftHistory key={`shift-history-${refreshTrigger}`} refreshTrigger={refreshTrigger} />;
       default:
-        return <ShiftEntry />;
+        return <ShiftEntry key={`shift-entry-${refreshTrigger}`} refreshTrigger={refreshTrigger} />;
     }
   };
 
@@ -98,7 +109,7 @@ const StaffDashboard = () => {
               <li className="nav-item">
                 <button 
                   className={`nav-link btn btn-link text-light p-2 ${activeTab === 'shift-entry' ? 'active fw-bold' : ''}`}
-                  onClick={() => setActiveTab('shift-entry')}
+                  onClick={() => handleTabChange('shift-entry')}
                 >
                   <i className="bi bi-clock me-1"></i>
                   <span className="d-none d-sm-inline">Shift Entry</span>
@@ -108,7 +119,7 @@ const StaffDashboard = () => {
               <li className="nav-item">
                 <button 
                   className={`nav-link btn btn-link text-light p-2 ${activeTab === 'shift-history' ? 'active fw-bold' : ''}`}
-                  onClick={() => setActiveTab('shift-history')}
+                  onClick={() => handleTabChange('shift-history')}
                 >
                   <i className="bi bi-calendar-check me-1"></i>
                   <span className="d-none d-sm-inline">View My Shifts</span>
