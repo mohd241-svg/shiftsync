@@ -1,4 +1,18 @@
 // =============================================================
+/**
+ * Get RealTimeShifts sheet with all headers and rows
+ */
+function getRealTimeShiftsFullData() {
+  const spreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sheet = spreadsheet.getSheetByName(SHIFTS_SHEET_NAME);
+  if (!sheet) return { headers: [], rows: [] };
+  const data = sheet.getDataRange().getValues();
+  if (data.length === 0) return { headers: [], rows: [] };
+  return {
+    headers: data[0],
+    rows: data.slice(1)
+  };
+}
 //               CONFIGURATION & CONSTANTS
 // =============================================================
 
@@ -20,93 +34,15 @@ const DEFAULT_TIMEZONE = 'America/New_York'; // Change this to your default time
  * Get user's stored timezone from Staff sheet
  */
 function getUserTimezoneFromEmail(email) {
-  try {
     const staffSheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName('Staff');
     const staffData = staffSheet.getDataRange().getValues();
-    
-    for (let i = 1; i < staffData.length; i++) {
-      const row = staffData[i];
-      const userEmail = row[1]; // Email in column B
-      const timezone = row[3];  // Timezone in column D
-      
-      if (userEmail && userEmail.toLowerCase() === email.toLowerCase()) {
-        Logger.log(`📍 Found timezone for ${email}: ${timezone}`);
-        return timezone || null;
-      }
-    }
-    
-    Logger.log(`⚠️ No timezone found for ${email}`);
-    return null;
-    
-  } catch (error) {
-    Logger.log(`❌ Error getting timezone for ${email}: ${error}`);
-    return null;
-  }
-}
-
-/**
- * Test timezone storage and retrieval from Time Zone column
- */
-function testTimezoneStorage() {
-  try {
-    Logger.log('🧪 Testing timezone storage in Time Zone column...');
-    
-    const spreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
-    const staffSheet = spreadsheet.getSheetByName(STAFF_SHEET_NAME);
-    
-    if (!staffSheet) {
-      return { success: false, message: 'Staff sheet not found' };
-    }
-    
-    // Get headers and prioritize column F for Time Zone (handle duplicates)
-    const headers = staffSheet.getRange(1, 1, 1, Math.max(staffSheet.getLastColumn(), 6)).getValues()[0];
-    let timezoneColumnIndex = -1;
-    let duplicateColumns = [];
-    
-    // Check for all Time Zone columns
-    for (let i = 0; i < headers.length; i++) {
-      if (headers[i] === 'Time Zone') {
-        duplicateColumns.push({
-          index: i,
-          column: String.fromCharCode(65 + i)
-        });
-      }
-    }
-    
-    // Prioritize column F (index 5) if it exists
-    if (headers.length >= 6 && headers[5] === 'Time Zone') {
-      timezoneColumnIndex = 5;
-      Logger.log(`🎯 Using primary Time Zone column at F (index 5)`);
-    } else if (duplicateColumns.length > 0) {
-      // Use the first Time Zone column found
-      timezoneColumnIndex = duplicateColumns[0].index;
-      Logger.log(`� Using Time Zone column at ${duplicateColumns[0].column} (index ${timezoneColumnIndex})`);
-    }
-    
-    Logger.log(`📋 Headers found: ${headers}`);
-    Logger.log(`🌍 Time Zone columns found: ${JSON.stringify(duplicateColumns)}`);
-    Logger.log(`🌍 Using Time Zone column index: ${timezoneColumnIndex} (Column ${timezoneColumnIndex >= 0 ? String.fromCharCode(65 + timezoneColumnIndex) : 'Not Found'})`);
-    
-    if (timezoneColumnIndex === -1) {
-      return { 
-        success: false, 
-        message: 'Time Zone column not found in Staff sheet',
-        headers: headers,
-        duplicateColumns: duplicateColumns,
-        actualColumns: headers.length
-      };
-    }
-    
-    // Check existing timezone data - ensure we read enough columns
-    const staffData = staffSheet.getRange(1, 1, staffSheet.getLastRow(), Math.max(staffSheet.getLastColumn(), 6)).getValues();
-    const timezoneData = [];
-    
+        
     for (let i = 1; i < staffData.length; i++) {
       const row = staffData[i];
       const employeeId = row[0];
       const name = row[1];
       const timezone = row[timezoneColumnIndex];
-      
+            
       timezoneData.push({
         employeeId: employeeId,
         name: name,
@@ -117,31 +53,13 @@ function testTimezoneStorage() {
         extractedTimezone: timezone ? extractTimezoneId(timezone) : null
       });
     }
-    
+        
     Logger.log(`📊 Timezone data for all staff:`);
     timezoneData.forEach(data => {
       Logger.log(`- ${data.name} (${data.employeeId}): ${data.timezone}`);
     });
-    
-    return {
-      success: true,
-      message: 'Timezone storage test completed',
-      data: {
-        columnIndex: timezoneColumnIndex,
-        columnName: 'Time Zone',
-        staffCount: timezoneData.length,
-        timezones: timezoneData
-      }
-    };
-    
-  } catch (error) {
-    Logger.log(`❌ Timezone storage test error: ${error}`);
-    return {
-      success: false,
-      message: 'Timezone storage test failed: ' + error.toString(),
-      error: error.toString()
-    };
-  }
+    // ...existing code...
+  // ...existing code...
 }
 
 /**
@@ -150,7 +68,6 @@ function testTimezoneStorage() {
  */
 function logServerTimeInfo() {
   const now = new Date();
-  
   Logger.log('=== 🕰️ SERVER TIME INFO ===');
   Logger.log(`Server Timezone: ${DEFAULT_TIMEZONE}`);
   Logger.log(`Server Time (HH:MM): ${getCurrentTimeString(DEFAULT_TIMEZONE)}`);
@@ -159,7 +76,6 @@ function logServerTimeInfo() {
   Logger.log(`Timestamp: ${now.getTime()}`);
   Logger.log(`Date (ISO): ${now.toISOString().split('T')[0]}`);
   Logger.log('============================');
-  
   return {
     timezone: DEFAULT_TIMEZONE,
     time: getCurrentTimeString(DEFAULT_TIMEZONE),
@@ -169,6 +85,7 @@ function logServerTimeInfo() {
     date: now.toISOString().split('T')[0]
   };
 }
+
 
 /**
  * Simple function to get server time and timezone info
@@ -181,7 +98,7 @@ function getServerTimeInfo() {
     const serverTimezone = DEFAULT_TIMEZONE;
     const serverTime = getCurrentTimeString(serverTimezone);
     
-    // Additional time formats for comparison
+    // ...existing code...
     const utcTime = now.toISOString();
     const serverDateTime = now.toLocaleString('en-US', { timeZone: serverTimezone });
     
@@ -213,6 +130,7 @@ function getServerTimeInfo() {
       message: 'Failed to get server time: ' + error.toString(),
       error: error.toString()
     };
+
   }
 }
 
@@ -311,6 +229,7 @@ function testTimezoneIssueDirectly() {
       success: false,
       message: 'Direct timezone test failed: ' + error.toString(),
       error: error.toString()
+
     };
   }
 }
@@ -745,6 +664,12 @@ function doPost(e) {
       case 'getCurrentShift': 
         response = getCurrentShift(data, clientTimezone); 
         break;
+      case 'getShiftDataDirectlyFromSheet':
+        response = getShiftDataDirectlyFromSheet(data, clientTimezone);
+        break;
+      case 'getShiftsDirectlyFromSheet':
+        response = getShiftsDirectlyFromSheet(data, clientTimezone);
+        break;
       case 'completeShift': 
         response = completeShift(data, clientTimezone); 
         break;
@@ -758,6 +683,9 @@ function doPost(e) {
         response = getStaffList(); 
         break;
       case 'createCompleteShift': 
+        response = createCompleteShift(data, clientTimezone); 
+        break;
+      case 'submitTimeSegments':
         response = createCompleteShift(data, clientTimezone); 
         break;
       case 'getDynamicData': 
@@ -801,6 +729,18 @@ function doPost(e) {
         break;
       case 'fixShiftStatus': 
         response = fixShiftStatus(data); 
+        break;
+      case 'updateShiftTotalDuration':
+        response = updateShiftTotalDuration(data);
+        break;
+      case 'updateShiftDurationAndEndTime':
+        response = updateShiftDurationAndEndTime(data);
+        break;
+      case 'updateShiftSegments':
+        response = updateShiftSegments(data);
+        break;
+      case 'syncCompleteShift':
+        response = syncCompleteShift(data);
         break;
       case 'testConnection': 
         response = { 
@@ -865,21 +805,17 @@ function doPost(e) {
         response = updateShiftWithEditTracking(data);
         break;
         
-      // Enhanced AI System
+      // Data fetching for AI (AI logic now in React)
       case 'getComprehensiveSheetData':
         response = getComprehensiveSheetData();
         break;
-      case 'processAIPromptWithData':
-        response = processAIPromptWithData(data);
+      
+      // Fresh data endpoints for forcing sheet refresh
+      case 'getShiftDataDirectlyFromSheet':
+        response = getShiftDataDirectlyFromSheet(data, clientTimezone);
         break;
-      case 'runExperimentalAI':
-        response = runExperimentalAI(data);
-        break;
-      case 'getAIAnalysisSuggestions':
-        response = getAIAnalysisSuggestions();
-        break;
-      case 'getAIInsightsDashboard':
-        response = getAIInsightsDashboard();
+      case 'getShiftsDirectlyFromSheet':
+        response = getShiftsDirectlyFromSheet(data, clientTimezone);
         break;
         
       default: 
@@ -1663,6 +1599,204 @@ function stopShift(data, clientTimezone) {
   }
 }
 
+// =============================================================
+//               FRESH DATA FUNCTIONS FOR FORCING SHEET REFRESH
+// =============================================================
+
+/**
+ * Get shift data directly from sheet without any caching or smart logic
+ * This bypasses all frontend caching and provides pure sheet data
+ */
+function getShiftDataDirectlyFromSheet(data, clientTimezone) {
+  try {
+    Logger.log('🔄 FORCING FRESH DATA FROM GOOGLE SHEETS');
+    const spreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const sheet = spreadsheet.getSheetByName(SHIFTS_SHEET_NAME);
+    if (!sheet) { 
+      return { 
+        success: true, 
+        data: null, 
+        message: 'Shift sheet does not exist',
+        _freshFromSheet: true
+      }; 
+    }
+
+    const employeeId = String(data.employeeId).trim();
+    const shiftDate = normalizeDate(data.date);
+    
+    Logger.log(`🔍 FRESH DATA SEARCH: ID="${employeeId}" Date="${shiftDate}"`);
+
+    const lastRow = sheet.getLastRow();
+    if (lastRow <= 1) { 
+      return { 
+        success: true, 
+        data: null,
+        _freshFromSheet: true
+      }; 
+    }
+
+    // Force fresh read from sheet
+    const allData = sheet.getRange(2, 1, lastRow - 1, 13).getValues();
+    let foundRowData = null;
+
+    // Loop from the end to find the most recent matching shift
+    for (let i = allData.length - 1; i >= 0; i--) {
+      const row = allData[i];
+      const rowEmployeeId = String(row[2]).trim();
+      const rowShiftDate = normalizeDate(row[3]);
+
+      if (rowEmployeeId === employeeId && rowShiftDate === shiftDate) {
+        foundRowData = row;
+        Logger.log(`✅ FRESH DATA FOUND in row ${i + 2}`);
+        break;
+      }
+    }
+
+    if (!foundRowData) {
+      Logger.log('❌ No fresh shift data found');
+      return { 
+        success: true, 
+        data: null,
+        _freshFromSheet: true
+      };
+    }
+    
+    // Return pure sheet data without any modifications
+    const responseData = { 
+      shiftId: foundRowData[0], 
+      employeeName: foundRowData[1], 
+      employeeId: foundRowData[2], 
+      shiftDate: normalizeDate(foundRowData[3]), 
+      shiftType: foundRowData[4], 
+      firstStartTime: foundRowData[5], 
+      lastEndTime: foundRowData[6], 
+      totalDuration: foundRowData[7], 
+      numberOfSegments: foundRowData[8],
+      segments: JSON.parse(foundRowData[9] || '[]'),
+      status: foundRowData[10], // Pure status from sheet
+      createdAt: foundRowData[11],
+      lastUpdated: foundRowData[12],
+      timezone: clientTimezone,
+      _freshFromSheet: true,
+      _fetchedAt: new Date().toISOString()
+    };
+    
+    Logger.log('📊 FRESH SHEET DATA RETURNED:', JSON.stringify(responseData));
+    
+    return {
+      success: true,
+      data: responseData,
+      _freshFromSheet: true
+    };
+  } catch (error) {
+    Logger.log('❌ Error getting fresh shift data: ' + error.toString());
+    return { 
+      success: false, 
+      message: 'Failed to get fresh shift data: ' + error.toString(),
+      _freshFromSheet: true
+    };
+  }
+}
+
+/**
+ * Get all shifts data directly from sheet without any caching
+ * This bypasses all frontend caching and provides pure sheet data for history
+ */
+function getShiftsDirectlyFromSheet(data, clientTimezone) {
+  try {
+    Logger.log('🔄 FORCING FRESH SHIFTS DATA FROM GOOGLE SHEETS');
+    const spreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const sheet = spreadsheet.getSheetByName(SHIFTS_SHEET_NAME);
+    if (!sheet) { 
+      return { 
+        success: false, 
+        message: 'Shift sheet does not exist',
+        _freshFromSheet: true
+      }; 
+    }
+
+    const employeeId = data.employeeId ? String(data.employeeId).trim() : null;
+    const startDate = data.startDate ? normalizeDate(data.startDate) : null;
+    const endDate = data.endDate ? normalizeDate(data.endDate) : null;
+    
+    Logger.log(`🔍 FRESH SHIFTS SEARCH: Employee="${employeeId}" Start="${startDate}" End="${endDate}"`);
+
+    const lastRow = sheet.getLastRow();
+    if (lastRow <= 1) { 
+      return { 
+        success: true, 
+        data: [],
+        _freshFromSheet: true
+      }; 
+    }
+
+    // Force fresh read from sheet
+    const allData = sheet.getRange(2, 1, lastRow - 1, 13).getValues();
+    const matchingShifts = [];
+
+    // Filter shifts based on criteria
+    for (let i = 0; i < allData.length; i++) {
+      const row = allData[i];
+      const rowEmployeeId = String(row[2]).trim();
+      const rowShiftDate = normalizeDate(row[3]);
+
+      let includeShift = true;
+
+      // Filter by employee ID if provided
+      if (employeeId && rowEmployeeId !== employeeId) {
+        includeShift = false;
+      }
+
+      // Filter by date range if provided
+      if (startDate && rowShiftDate < startDate) {
+        includeShift = false;
+      }
+      if (endDate && rowShiftDate > endDate) {
+        includeShift = false;
+      }
+
+      if (includeShift) {
+        const shiftData = {
+          shiftId: row[0], 
+          employeeName: row[1], 
+          employeeId: row[2], 
+          shiftDate: normalizeDate(row[3]), 
+          date: normalizeDate(row[3]), // Alias for compatibility
+          shiftType: row[4], 
+          firstStartTime: row[5], 
+          lastEndTime: row[6], 
+          totalDuration: row[7], 
+          numberOfSegments: row[8],
+          segments: JSON.parse(row[9] || '[]'),
+          status: row[10], // Pure status from sheet
+          createdAt: row[11],
+          lastUpdated: row[12],
+          timezone: clientTimezone,
+          _freshFromSheet: true,
+          _rowIndex: i + 2
+        };
+        
+        matchingShifts.push(shiftData);
+      }
+    }
+    
+    Logger.log(`📊 FRESH SHIFTS DATA: Found ${matchingShifts.length} shifts`);
+    
+    return {
+      success: true,
+      data: matchingShifts,
+      _freshFromSheet: true,
+      _fetchedAt: new Date().toISOString()
+    };
+  } catch (error) {
+    Logger.log('❌ Error getting fresh shifts data: ' + error.toString());
+    return { 
+      success: false, 
+      message: 'Failed to get fresh shifts data: ' + error.toString(),
+      _freshFromSheet: true
+    };
+  }
+}
 
 
 function completeShift(data) {
@@ -1844,29 +1978,39 @@ function getCurrentShift(data, clientTimezone) {
     
     Logger.log(`🎯 IMMEDIATE STATUS: Stored="${storedStatus}", Smart="${smartStatus}", CurrentTime=${currentTime}`);
     
-    // Build response with immediate smart status
+    // 🔧 RETURN PURE SHEET DATA (no calculations, no smart status)
     const responseData = { 
       shiftId: foundRowData[0], 
       employeeName: foundRowData[1], 
       employeeId: foundRowData[2], 
       shiftDate: normalizeDate(foundRowData[3]), 
       shiftType: foundRowData[4], 
-      segments: segments.map(seg => ({
-        ...seg,
-        startTimeFormatted: formatTimeForClient(seg.startTime, clientTimezone),
-        endTimeFormatted: seg.endTime ? formatTimeForClient(seg.endTime, clientTimezone) : null
-      })), 
-      totalDuration: foundRowData[7], 
-      status: smartStatus, // 🔥 IMMEDIATE SMART STATUS
-      isActive: hasActiveSegment,
-      firstStartTimeFormatted: formatTimeForClient(foundRowData[5], clientTimezone),
-      lastEndTimeFormatted: foundRowData[6] ? formatTimeForClient(foundRowData[6], clientTimezone) : null,
+      firstStartTime: foundRowData[5], // 🔧 PURE SHEET DATA
+      lastEndTime: foundRowData[6], // 🔧 PURE SHEET DATA  
+      totalDuration: foundRowData[7], // 🔧 PURE SHEET DATA
+      numberOfSegments: foundRowData[8],
+      segments: segments, // � PURE SEGMENTS FROM SHEET
+      status: foundRowData[10], // 🔧 PURE STATUS FROM SHEET
+      createdAt: foundRowData[11],
+      lastUpdated: foundRowData[12],
       timezone: clientTimezone,
-      _debug: {
-        storedStatus: storedStatus,
-        smartStatus: smartStatus,
-        currentTime: currentTime,
-        autoFixed: smartStatus !== storedStatus
+      _sheetData: {
+        rawRow: foundRowData,
+        columnMapping: {
+          0: 'Shift ID',
+          1: 'Employee Name', 
+          2: 'Employee ID',
+          3: 'Shift Date',
+          4: 'Shift Type',
+          5: 'First Start Time',
+          6: 'Last End Time',
+          7: 'Total Duration', 
+          8: 'Number of Segments',
+          9: 'Segments Data',
+          10: 'Status',
+          11: 'Created At',
+          12: 'Last Updated'
+        }
       }
     };
     
@@ -7818,66 +7962,40 @@ function getAllShiftsForAdmin(payload) {
             if (employeeId) {
               const timezone = getUserTimezoneFromId(employeeId);
               value = timezone || 'Not Set';
-            } else {
-              value = 'Not Set';
             }
           }
         }
-        // Note: Status will be calculated by React frontend using smart logic
-        
         shiftObject[header] = value;
       });
-      
-      // Don't add Row Index to the final object since it's not needed in frontend
       return shiftObject;
     });
-    
-    // Apply filters using the correct field names
+
+    // Apply filters
     if (startDate) {
-      filteredShifts = filteredShifts.filter(shift => {
-        const shiftDate = normalizeDate(shift['Shift Date'] || shift.shiftDate);
-        return shiftDate >= startDate;
-      });
+      filteredShifts = filteredShifts.filter(shift => shift['Shift Date'] >= startDate);
     }
-    
     if (endDate) {
-      filteredShifts = filteredShifts.filter(shift => {
-        const shiftDate = normalizeDate(shift['Shift Date'] || shift.shiftDate);
-        return shiftDate <= endDate;
-      });
+      filteredShifts = filteredShifts.filter(shift => shift['Shift Date'] <= endDate);
     }
-    
     if (searchTerm) {
-      const term = searchTerm.toLowerCase();
-      filteredShifts = filteredShifts.filter(shift => {
-        const employeeID = (shift['Employee ID'] || shift.employeeID || '').toString().toLowerCase();
-        const employeeName = (shift['Employee Name'] || shift.employeeName || '').toString().toLowerCase();
-        return employeeID.includes(term) || employeeName.includes(term);
-      });
+      filteredShifts = filteredShifts.filter(shift =>
+        Object.values(shift).some(val =>
+          val && val.toString().toLowerCase().includes(searchTerm.toLowerCase())
+        )
+      );
     }
-    
-    if (status && status !== 'ALL') {
-      filteredShifts = filteredShifts.filter(shift => {
-        const shiftStatus = shift['Status'] || shift.status;
-        return shiftStatus === status;
-      });
+    if (status && status !== 'All Statuses') {
+      filteredShifts = filteredShifts.filter(shift => shift['Status'] === status);
     }
-    
-    Logger.log(`✅ Found ${filteredShifts.length} shifts matching criteria`);
-    Logger.log('📄 Sample record keys:', Object.keys(filteredShifts[0] || {}));
-    
+
     return {
       success: true,
       data: filteredShifts,
-      message: `Found ${filteredShifts.length} shifts`
+      message: `${filteredShifts.length} shifts found`
     };
-    
   } catch (error) {
-    Logger.log(`❌ Error getting shifts for admin: ${error}`);
-    return {
-      success: false,
-      message: 'Error getting shifts: ' + error.toString()
-    };
+    Logger.log('Error in getAllShiftsForAdmin: ' + error.toString());
+    return { success: false, message: 'Failed to get shifts: ' + error.toString() };
   }
 }
 
@@ -8030,10 +8148,18 @@ function updateShiftAsAdmin(payload) {
       Logger.log('Updated status to:', updates.status);
     }
     
-    // Update last modified timestamp
-    const currentTime = getCurrentTimeString(DEFAULT_TIMEZONE);
-    shiftsSheet.getRange(rowNumber, 13).setValue(currentTime);  // M: Last Updated
-    Logger.log('Updated lastUpdate to:', currentTime);
+    // Update last modified timestamp - use provided timestamp or generate new one
+    let timestampToUse;
+    if (updates.lastUpdated !== undefined) {
+      timestampToUse = updates.lastUpdated;  // Use timestamp from frontend
+      Logger.log('Using provided timestamp:', timestampToUse);
+    } else {
+      timestampToUse = getCurrentTimeString(DEFAULT_TIMEZONE);  // Generate new timestamp
+      Logger.log('Generated new timestamp:', timestampToUse);
+    }
+    
+    shiftsSheet.getRange(rowNumber, 13).setValue(timestampToUse);  // M: Last Updated
+    Logger.log('Updated lastUpdate to:', timestampToUse);
     
     Logger.log(`✅ Shift ${shiftId} updated successfully`);
     
@@ -8507,14 +8633,18 @@ function checkShiftEditHistory(data) {
  */
 function updateShiftWithEditTracking(data) {
   try {
+    Logger.log('🔧 === UPDATE SHIFT WITH EDIT TRACKING (EXACT SHIFT ENTRY COLUMNS) ===');
+    
     const { 
       shiftId, 
       firstStartTime, 
       lastEndTime, 
       shiftType, 
-      duration,
+      segments, // Added segments support
+      totalDuration, // Use totalDuration instead of duration
       editedBy,
-      editedById 
+      editedById,
+      scheduleStatus // Added status support
     } = data;
     
     if (!shiftId || !firstStartTime || !lastEndTime) {
@@ -8522,65 +8652,80 @@ function updateShiftWithEditTracking(data) {
     }
     
     const spreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
-    const shiftsSheet = spreadsheet.getSheetByName(SHIFTS_SHEET_NAME);
+    const sheet = spreadsheet.getSheetByName(SHIFTS_SHEET_NAME);
     
-    if (!shiftsSheet) {
+    if (!sheet) {
       return { success: false, message: 'Shifts sheet not found' };
     }
     
-    const values = shiftsSheet.getDataRange().getValues();
-    const headers = values[0];
-    
-    // Find column indices
-    const shiftIdCol = headers.indexOf('Shift ID');
-    const firstStartCol = headers.indexOf('First Start Time');
-    const lastEndCol = headers.indexOf('Last End Time');
-    const shiftTypeCol = headers.indexOf('Shift Type');
-    const durationCol = headers.indexOf('Total Duration');
-    const updatedCol = headers.indexOf('Updated');
-    const lastUpdatedCol = headers.indexOf('Last Updated');
-    
-    if (shiftIdCol === -1 || firstStartCol === -1 || lastEndCol === -1) {
-      return { success: false, message: 'Required columns not found' };
+    // Find the shift by ID (same pattern as updateShiftSegments)
+    const lastRow = sheet.getLastRow();
+    if (lastRow <= 1) {
+      return { success: false, message: 'No shifts found' };
     }
     
-    // Find the shift to update
-    for (let i = 1; i < values.length; i++) {
-      const row = values[i];
-      if (row[shiftIdCol] === shiftId) {
-        // Update the shift data
-        shiftsSheet.getRange(i + 1, firstStartCol + 1).setValue(firstStartTime);
-        shiftsSheet.getRange(i + 1, lastEndCol + 1).setValue(lastEndTime);
+    const allData = sheet.getRange(2, 1, lastRow - 1, 15).getValues(); // Get all columns
+    
+    for (let i = 0; i < allData.length; i++) {
+      const row = allData[i];
+      const rowShiftId = row[0]; // Column A - Shift ID
+      
+      if (rowShiftId === shiftId) {
+        const rowNumber = i + 2;
         
-        if (shiftTypeCol !== -1) {
-          shiftsSheet.getRange(i + 1, shiftTypeCol + 1).setValue(shiftType || 'Regular');
+        Logger.log(`📊 Updating shift ${shiftId} with EXACT SHIFT ENTRY COLUMN PATTERN`);
+        
+        // 🔥 UPDATE EXACT SAME COLUMNS AS SHIFT ENTRY
+        
+        // Column F (First Start Time) - index 5
+        sheet.getRange(rowNumber, 6).setValue(firstStartTime);
+        
+        // Column G (Last End Time) - index 6  
+        sheet.getRange(rowNumber, 7).setValue(lastEndTime);
+        
+        // Column H (Total Duration) - index 7
+        if (totalDuration !== undefined) {
+          sheet.getRange(rowNumber, 8).setValue(totalDuration);
         }
         
-        if (durationCol !== -1) {
-          shiftsSheet.getRange(i + 1, durationCol + 1).setValue(duration || 0);
+        // Column I (Number of Segments) - index 8
+        if (segments && Array.isArray(segments)) {
+          sheet.getRange(rowNumber, 9).setValue(segments.length);
+          
+          // Column J (Segments Data) - index 9 - CRITICAL FOR HISTORY MATCHING SHIFT ENTRY
+          sheet.getRange(rowNumber, 10).setValue(JSON.stringify(segments));
+          
+          Logger.log(`📋 Updated segments data: ${segments.length} segments`);
         }
         
-        // Mark as updated (for edit tracking)
-        if (updatedCol !== -1) {
-          shiftsSheet.getRange(i + 1, updatedCol + 1).setValue('Yes');
+        // Column K (Status) - index 10
+        if (scheduleStatus) {
+          sheet.getRange(rowNumber, 11).setValue(scheduleStatus);
         }
         
-        // Update last modified timestamp
-        if (lastUpdatedCol !== -1) {
-          const now = new Date();
-          const timestamp = Utilities.formatDate(now, DEFAULT_TIMEZONE, 'yyyy-MM-dd HH:mm:ss');
-          shiftsSheet.getRange(i + 1, lastUpdatedCol + 1).setValue(timestamp);
+        // Column M (Last Updated) - index 12 - EXACT SAME AS SHIFT ENTRY
+        sheet.getRange(rowNumber, 13).setValue(new Date());
+        
+        // Column E (Shift Type) - index 4
+        if (shiftType) {
+          sheet.getRange(rowNumber, 5).setValue(shiftType);
         }
         
-        Logger.log(`✅ Shift ${shiftId} updated with edit tracking by ${editedBy}`);
+        // Column O (Updated flag) - index 14 - for edit tracking
+        sheet.getRange(rowNumber, 15).setValue('Yes');
+        
+        Logger.log(`✅ Shift ${shiftId} updated with EXACT SHIFT ENTRY COLUMNS by ${editedBy}`);
+        Logger.log(`📊 Updated columns: F(Start), G(End), H(Duration), I(NumSegments), J(SegmentsData), K(Status), M(LastUpdated), O(EditFlag)`);
         
         return {
           success: true,
-          message: 'Shift updated successfully',
+          message: 'Shift updated with exact Shift Entry column pattern',
           data: {
             shiftId: shiftId,
             updatedBy: editedBy,
-            timestamp: new Date().toISOString()
+            timestamp: new Date().toISOString(),
+            columnsUpdated: ['F', 'G', 'H', 'I', 'J', 'K', 'M', 'O'],
+            segmentsCount: segments ? segments.length : 0
           }
         };
       }
@@ -8595,15 +8740,16 @@ function updateShiftWithEditTracking(data) {
 }
 
 // =============================================================
-//                   ENHANCED AI SYSTEM
+//                   DATA FETCHING FOR AI
+//           (AI Logic moved to React frontend)
 // =============================================================
 
 /**
- * Get comprehensive sheet data for AI analysis
+ * Get comprehensive sheet data for AI analysis (React will handle AI logic)
  */
 function getComprehensiveSheetData() {
   try {
-    Logger.log('🤖 Fetching comprehensive sheet data for AI analysis');
+    Logger.log('📊 Fetching comprehensive sheet data for frontend AI processing');
     
     const spreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
     const shiftsSheet = spreadsheet.getSheetByName(SHIFTS_SHEET_NAME);
@@ -8658,7 +8804,7 @@ function getComprehensiveSheetData() {
     
     stats.averageShiftDuration = stats.totalShifts > 0 ? (stats.totalHours / stats.totalShifts).toFixed(2) : 0;
     
-    Logger.log(`✅ Comprehensive data collected: ${shifts.length} shifts, ${staff.length} staff`);
+    Logger.log(`✅ Data collected for frontend AI: ${shifts.length} shifts, ${staff.length} staff`);
     
     return {
       success: true,
@@ -8677,978 +8823,331 @@ function getComprehensiveSheetData() {
     };
     
   } catch (error) {
-    Logger.log(`❌ Error getting comprehensive data: ${error}`);
-    return { success: false, message: `Error fetching data: ${error.message}` };
+    Logger.log(`❌ Error getting data for AI: ${error}`);
   }
 }
 
+// All AI processing logic moved to React frontend  
+// Apps Script now only provides data via getComprehensiveSheetData()
+
+// =============================================================
+//                   TOTAL DURATION FIX FUNCTION
+// =============================================================
+
 /**
- * Process AI prompt with automatic data fetching
+ * Update total duration for a specific shift - Simple data operation only
  */
-function processAIPromptWithData(data) {
+function updateShiftTotalDuration(data) {
   try {
-    const { prompt, includeRawData } = data;
+    Logger.log('🔧 === UPDATE SHIFT TOTAL DURATION ===');
     
-    if (!prompt) {
-      return { success: false, message: 'Prompt is required' };
+    const { shiftId, totalDuration, reason } = data;
+    
+    if (!shiftId || totalDuration === undefined) {
+      return {
+        success: false,
+        message: 'Missing shiftId or totalDuration'
+      };
     }
     
-    Logger.log(`🤖 Processing AI prompt: ${prompt.substring(0, 100)}...`);
+    const spreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const sheet = spreadsheet.getSheetByName(SHIFTS_SHEET_NAME);
     
-    // Get comprehensive data first
-    const dataResult = getComprehensiveSheetData();
-    if (!dataResult.success) {
-      return dataResult;
+    if (!sheet) {
+      return {
+        success: false,
+        message: 'Shifts sheet not found'
+      };
     }
     
-    const comprehensiveData = dataResult.data;
+    // Find the shift by ID
+    const lastRow = sheet.getLastRow();
+    if (lastRow <= 1) {
+      return {
+        success: false,
+        message: 'No shifts found'
+      };
+    }
     
-    // Simulate AI processing with REAL data analysis
-    const analysis = generateRealAIResponse(prompt, comprehensiveData);
+    const allData = sheet.getRange(2, 1, lastRow - 1, 13).getValues();
     
-    Logger.log(`✅ AI analysis completed with ${comprehensiveData.shiftsCount} shifts and ${comprehensiveData.staffCount} staff`);
-    
-    return {
-      success: true,
-      data: {
-        analysis: analysis.response,
-        recommendations: analysis.recommendations,
-        confidence: analysis.confidence,
-        processingTime: analysis.processingTime,
-        dataUsed: {
-          shiftsAnalyzed: comprehensiveData.shiftsCount,
-          staffAnalyzed: comprehensiveData.staffCount,
-          timeRange: comprehensiveData.statistics.dateRange,
-          totalHours: comprehensiveData.statistics.totalHours
-        },
-        rawData: includeRawData ? comprehensiveData : null
-      }
-    };
-    
-  } catch (error) {
-    Logger.log(`❌ Error processing AI prompt: ${error}`);
-    return { success: false, message: `AI processing failed: ${error.message}` };
-  }
-}
-
-/**
- * Real AI response generator that analyzes actual data - NO CANNED RESPONSES
- */
-function generateRealAIResponse(prompt, data) {
-  const startTime = Date.now();
-  
-  // NO CANNED RESPONSES - ONLY REAL DATA ANALYSIS
-  Logger.log(`🤖 AI analyzing prompt: "${prompt}"`);
-  Logger.log(`📊 Data available: ${data.shiftsCount} shifts, ${data.staffCount} staff`);
-  
-  const promptLower = prompt.toLowerCase();
-  let response = `🤖 AI Analysis Results:\n\n`;
-  
-  // Get employee performance analysis for ANY query
-  const employeeAnalysis = analyzeEmployeePerformance(data);
-  const employees = employeeAnalysis.allEmployees;
-  
-  Logger.log(`👥 Analyzed ${employees.length} employees`);
-  
-  if (employees.length === 0) {
-    response += `❌ No employee data found to analyze.\n`;
-    response += `📊 Available data: ${data.shiftsCount} shifts, ${data.staffCount} staff records\n`;
-    return {
-      response: response,
-      recommendations: [],
-      confidence: 0,
-      processingTime: Date.now() - startTime
-    };
-  }
-  
-  // Sort employees by total hours for analysis
-  const workloadRanking = [...employees].sort((a, b) => a.totalHours - b.totalHours);
-  const performanceRanking = [...employees].sort((a, b) => b.score - a.score);
-  
-  // Check what user is asking about
-  if (promptLower.includes('hardwork') || promptLower.includes('hard work') || promptLower.includes('most work') || promptLower.includes('best') || promptLower.includes('top')) {
-    // Show hardest working employee
-    const hardestWorker = workloadRanking[workloadRanking.length - 1];
-    response += `🏆 HARDEST WORKING EMPLOYEE:\n`;
-    response += `• Name: ${hardestWorker.name}\n`;
-    response += `• Total Hours: ${hardestWorker.totalHours.toFixed(1)} hours\n`;
-    response += `• Number of Shifts: ${hardestWorker.totalShifts}\n`;
-    response += `• Average Shift Duration: ${hardestWorker.avgDuration.toFixed(1)} hours\n`;
-    response += `• Performance Score: ${hardestWorker.score}/100\n`;
-    response += `• Completion Rate: ${hardestWorker.completionRate.toFixed(1)}%\n\n`;
-    
-  } else if (promptLower.includes('less work') || promptLower.includes('least work') || promptLower.includes('worst') || promptLower.includes('lowest')) {
-    // Show least working employee  
-    const leastWorker = workloadRanking[0];
-    response += `📉 EMPLOYEE DOING LEAST WORK:\n`;
-    response += `• Name: ${leastWorker.name}\n`;
-    response += `• Total Hours: ${leastWorker.totalHours.toFixed(1)} hours\n`;
-    response += `• Number of Shifts: ${leastWorker.totalShifts}\n`;
-    response += `• Average Shift Duration: ${leastWorker.avgDuration.toFixed(1)} hours\n`;
-    response += `• Performance Score: ${leastWorker.score}/100\n`;
-    response += `• Completion Rate: ${leastWorker.completionRate.toFixed(1)}%\n\n`;
-    
-  } else {
-    // For any other question, show all employee data
-    response += `📊 COMPLETE EMPLOYEE ANALYSIS:\n\n`;
-    workloadRanking.forEach((emp, index) => {
-      const position = workloadRanking.length - index;
-      response += `${position}. ${emp.name}:\n`;
-      response += `   • Hours: ${emp.totalHours.toFixed(1)}h\n`;
-      response += `   • Shifts: ${emp.totalShifts}\n`;
-      response += `   • Score: ${emp.score}/100\n`;
-      response += `   • Completion: ${emp.completionRate.toFixed(1)}%\n\n`;
-    });
-  }
-  
-  // Always show ranking for context
-  response += `📈 WORKLOAD RANKING (Most to Least Hours):\n`;
-  workloadRanking.reverse().forEach((emp, index) => {
-    response += `${index + 1}. ${emp.name}: ${emp.totalHours.toFixed(1)}h (${emp.totalShifts} shifts)\n`;
-  });
-  response += '\n';
-  
-  // Data summary
-  response += `📋 RAW DATA SUMMARY:\n`;
-  response += `• Total Shifts in Database: ${data.shiftsCount}\n`;
-  response += `• Total Staff Records: ${data.staffCount}\n`;
-  response += `• Total Hours Tracked: ${employees.reduce((sum, emp) => sum + emp.totalHours, 0).toFixed(1)}\n`;
-  response += `• Date Range: ${data.statistics?.dateRange?.earliest || 'N/A'} to ${data.statistics?.dateRange?.latest || 'N/A'}\n`;
-  
-  const processingTime = Date.now() - startTime;
-  
-  return {
-    response: response,
-    recommendations: [`Based on the analysis above`],
-    confidence: 100, // 100% confidence since it's real data
-    processingTime: processingTime
-  };
-}
-  const promptLower = prompt.toLowerCase();
-  let response = "🤖 AI Analysis - Real Data Analysis:\n\n";
-  
-  // REAL DATA ANALYSIS - Who is doing less work / lowest performer
-  if (promptLower.includes('less work') || promptLower.includes('least work') || promptLower.includes('lowest performer') || promptLower.includes('worst employee') || promptLower.includes('underperformer') || promptLower.includes('who is doing less')) {
-    const employeeAnalysis = analyzeEmployeePerformance(data);
-    const employees = employeeAnalysis.allEmployees;
-
-
-    
-    if (employees.length > 0) {
-      // Sort by total hours (ascending) to find who's doing less work
-      const workloadRanking = [...employees].sort((a, b) => a.totalHours - b.totalHours);
-      const leastWorker = workloadRanking[0];
+    for (let i = 0; i < allData.length; i++) {
+      const row = allData[i];
+      const rowShiftId = row[0]; // Shift ID is in column A
       
-      response += `📉 WORKLOAD ANALYSIS - Who Is Doing Less Work:\n\n`;
-      response += `🔴 EMPLOYEE DOING LEAST WORK:\n`;
-      response += `• Name: ${leastWorker.name}\n`;
-      response += `• Total Hours Worked: ${leastWorker.totalHours.toFixed(1)} hours\n`;
-      response += `• Number of Shifts: ${leastWorker.totalShifts}\n`;
-      response += `• Average Shift Duration: ${leastWorker.avgDuration.toFixed(1)} hours\n`;
-      response += `• Completion Rate: ${leastWorker.completionRate.toFixed(1)}%\n`;
-      response += `• Performance Score: ${leastWorker.score}/100\n\n`;
-      
-      response += `📊 FULL WORKLOAD RANKING (Lowest to Highest):\n`;
-      workloadRanking.forEach((emp, index) => {
-        const indicator = index === 0 ? '🔴' : index === workloadRanking.length - 1 ? '🟢' : '🟡';
-        response += `${index + 1}. ${indicator} ${emp.name}: ${emp.totalHours.toFixed(1)}h (${emp.totalShifts} shifts)\n`;
-      });
-      response += '\n';
-      
-      // Compare with highest worker
-      if (workloadRanking.length > 1) {
-        const mostWorker = workloadRanking[workloadRanking.length - 1];
-        const hoursDifference = mostWorker.totalHours - leastWorker.totalHours;
-        const percentageDifference = ((hoursDifference / mostWorker.totalHours) * 100).toFixed(1);
+      if (rowShiftId === shiftId) {
+        const rowNumber = i + 2; // Convert to 1-based row number
+        const oldTotalDuration = row[7]; // Total Duration is in column H (index 7)
         
-        response += `📈 WORKLOAD COMPARISON:\n`;
-        response += `• ${leastWorker.name} works ${hoursDifference.toFixed(1)} hours less than ${mostWorker.name}\n`;
-        response += `• That's ${percentageDifference}% less workload\n`;
-        response += `• Shift count difference: ${mostWorker.totalShifts - leastWorker.totalShifts} shifts\n\n`;
-      }
-      
-      // Recommendations for the underperformer
-      response += `💡 RECOMMENDATIONS FOR ${leastWorker.name.toUpperCase()}:\n`;
-      if (leastWorker.totalHours < 20) {
-        response += `• Consider increasing shift frequency\n`;
-      }
-      if (leastWorker.completionRate < 80) {
-        response += `• Focus on completing started shifts\n`;
-      }
-      if (leastWorker.avgDuration < 6) {
-        response += `• Consider longer shift durations for better productivity\n`;
-      }
-      response += `• Monitor performance and provide additional training if needed\n\n`;
-    } else {
-      response += `❌ No employee data available for workload analysis.\n\n`;
-    }
-  }
-  
-  // REAL DATA ANALYSIS - Best Employee Detection
-  else if (promptLower.includes('best employee') || promptLower.includes('top performer') || promptLower.includes('who is the best')) {
-    const employeeAnalysis = analyzeEmployeePerformance(data);
-    response += `� BEST EMPLOYEE ANALYSIS:\n`;
-    response += `• Best Overall Performer: ${employeeAnalysis.bestEmployee.name}\n`;
-    response += `• Performance Score: ${employeeAnalysis.bestEmployee.score}/100\n`;
-    response += `• Total Hours Worked: ${employeeAnalysis.bestEmployee.totalHours} hours\n`;
-    response += `• Average Shift Duration: ${employeeAnalysis.bestEmployee.avgDuration} hours\n`;
-    response += `• Shifts Completed: ${employeeAnalysis.bestEmployee.shiftsCompleted}\n`;
-    response += `• Completion Rate: ${employeeAnalysis.bestEmployee.completionRate}%\n`;
-    response += `• Consistency Score: ${employeeAnalysis.bestEmployee.consistencyScore}/10\n\n`;
-    
-    response += `📊 TOP 3 PERFORMERS:\n`;
-    employeeAnalysis.topPerformers.forEach((emp, index) => {
-      response += `${index + 1}. ${emp.name} - Score: ${emp.score}/100 (${emp.totalHours}h total)\n`;
-    });
-    response += '\n';
-  }
-  
-  // REAL DATA ANALYSIS - Productivity Insights
-  else if (promptLower.includes('productivity') || promptLower.includes('performance')) {
-    const productivityStats = calculateProductivityStats(data);
-    response += `� PRODUCTIVITY INSIGHTS:\n`;
-    response += `• Total Productive Hours: ${productivityStats.totalHours} hours\n`;
-    response += `• Average Daily Productivity: ${productivityStats.avgDailyHours} hours\n`;
-    response += `• Most Productive Day: ${productivityStats.mostProductiveDay}\n`;
-    response += `• Least Productive Day: ${productivityStats.leastProductiveDay}\n`;
-    response += `• Productivity Trend: ${productivityStats.trend}\n`;
-    response += `• Department Performance: ${productivityStats.departmentRanking}\n\n`;
-  }
-  
-  // REAL DATA ANALYSIS - Pattern Detection
-  else if (promptLower.includes('pattern') || promptLower.includes('trend')) {
-    const patterns = detectRealPatterns(data);
-    response += `📈 PATTERN ANALYSIS:\n`;
-    response += `• Peak Hours: ${patterns.peakHours}\n`;
-    response += `• Common Shift Duration: ${patterns.commonDuration} hours\n`;
-    response += `• Weekend vs Weekday: ${patterns.weekendComparison}\n`;
-    response += `• Seasonal Trends: ${patterns.seasonalTrends}\n\n`;
-  }
-  
-  // REAL DATA ANALYSIS - Department Insights
-  else if (promptLower.includes('department') || promptLower.includes('workload')) {
-    const deptAnalysis = analyzeDepartments(data);
-    response += `🏢 DEPARTMENT ANALYSIS:\n`;
-    deptAnalysis.forEach(dept => {
-      response += `• ${dept.name}: ${dept.totalHours}h (${dept.employeeCount} employees, ${dept.avgHours}h avg)\n`;
-    });
-    response += '\n';
-  }
-  
-  // Generic analysis if no specific query matched
-  else {
-    const employeeAnalysis = analyzeEmployeePerformance(data);
-    response += `📊 GENERAL WORKFORCE ANALYSIS:\n`;
-    response += `• Total Employees: ${employeeAnalysis.allEmployees.length}\n`;
-    
-    if (employeeAnalysis.allEmployees.length > 0) {
-      const avgScore = (employeeAnalysis.allEmployees.reduce((sum, emp) => sum + emp.score, 0) / employeeAnalysis.allEmployees.length).toFixed(1);
-      const totalHours = employeeAnalysis.allEmployees.reduce((sum, emp) => sum + emp.totalHours, 0).toFixed(1);
-      const avgCompletionRate = (employeeAnalysis.allEmployees.reduce((sum, emp) => sum + emp.completionRate, 0) / employeeAnalysis.allEmployees.length).toFixed(1);
-      
-      response += `• Average Performance Score: ${avgScore}/100\n`;
-      response += `• Total Hours Tracked: ${totalHours} hours\n`;
-      response += `• Overall Completion Rate: ${avgCompletionRate}%\n\n`;
-      
-      // Show top and bottom performers
-      const workloadRanking = [...employeeAnalysis.allEmployees].sort((a, b) => a.totalHours - b.totalHours);
-      response += `📈 QUICK PERFORMANCE OVERVIEW:\n`;
-      response += `• Highest Performer: ${workloadRanking[workloadRanking.length - 1].name} (${workloadRanking[workloadRanking.length - 1].totalHours.toFixed(1)}h)\n`;
-      response += `• Lowest Performer: ${workloadRanking[0].name} (${workloadRanking[0].totalHours.toFixed(1)}h)\n\n`;
-    }
-  }
-  
-  // Add real insights based on actual data
-  const insights = generateRealInsights(data);
-  response += `🔍 REAL DATA INSIGHTS:\n`;
-  response += `• Total Shifts Analyzed: ${data.shiftsCount}\n`;
-  response += `• Total Staff Members: ${data.staffCount}\n`;
-  response += `• Data Quality Score: ${insights.dataQuality}/100\n`;
-  response += `• System Utilization: ${insights.utilization}%\n`;
-  response += `• Completion Efficiency: ${insights.efficiency}%\n\n`;
-  
-  response += `💡 DATA-DRIVEN RECOMMENDATIONS:\n`;
-  const recommendations = generateDataDrivenRecommendations(data);
-  recommendations.forEach(rec => {
-    response += `• ${rec}\n`;
-  });
-  
-  const processingTime = Date.now() - startTime;
-  
-  return {
-    response: response,
-}
-
-/**
- * Analyze employee performance from real data
- */
-function analyzeEmployeePerformance(data) {
-  const employeeStats = {};
-  
-  // Analyze each shift to build employee statistics
-  data.shifts.forEach(shift => {
-    const empName = shift['Employee Name'];
-    const empId = shift['Employee ID'];
-    const duration = parseFloat(shift['Total Duration']) || 0;
-    const status = shift['Status'];
-    
-    if (!empName) return;
-    
-    if (!employeeStats[empName]) {
-      employeeStats[empName] = {
-        name: empName,
-        id: empId,
-        totalHours: 0,
-        shiftsCompleted: 0,
-        totalShifts: 0,
-        completedShifts: 0,
-        durations: []
-      };
-    }
-    
-    employeeStats[empName].totalShifts++;
-    employeeStats[empName].totalHours += duration;
-    employeeStats[empName].durations.push(duration);
-    
-    if (status === 'COMPLETED') {
-      employeeStats[empName].completedShifts++;
-      employeeStats[empName].shiftsCompleted++;
-    }
-  });
-  
-  // Calculate performance scores
-  const employees = Object.values(employeeStats).map(emp => {
-    emp.avgDuration = emp.totalHours / emp.totalShifts || 0;
-    emp.completionRate = (emp.completedShifts / emp.totalShifts) * 100 || 0;
-    emp.consistencyScore = calculateConsistencyScore(emp.durations);
-    
-    // Performance score calculation (0-100)
-    emp.score = Math.round(
-      (emp.totalHours * 0.3) +           // 30% total hours
-      (emp.completionRate * 0.4) +       // 40% completion rate
-      (emp.consistencyScore * 10 * 0.3)  // 30% consistency
-    );
-    
-    return emp;
-  });
-  
-  // Sort by performance score
-  employees.sort((a, b) => b.score - a.score);
-  
-  return {
-    bestEmployee: employees[0] || { name: 'No data', score: 0, totalHours: 0, avgDuration: 0, shiftsCompleted: 0, completionRate: 0, consistencyScore: 0 },
-    topPerformers: employees.slice(0, 3),
-    allEmployees: employees
-  };
-}
-
-/**
- * Calculate consistency score based on shift duration variance
- */
-function calculateConsistencyScore(durations) {
-  if (durations.length < 2) return 5;
-  
-  const avg = durations.reduce((sum, d) => sum + d, 0) / durations.length;
-  const variance = durations.reduce((sum, d) => sum + Math.pow(d - avg, 2), 0) / durations.length;
-  const stdDev = Math.sqrt(variance);
-  
-  // Lower standard deviation = higher consistency (scale 1-10)
-  return Math.max(1, 10 - (stdDev * 2));
-}
-
-/**
- * Calculate productivity statistics from real data
- */
-function calculateProductivityStats(data) {
-  const dailyHours = {};
-  const departmentHours = {};
-  
-  data.shifts.forEach(shift => {
-    const date = shift['Shift Date'];
-    const duration = parseFloat(shift['Total Duration']) || 0;
-    const dept = shift['Department'] || 'Unknown';
-    
-    if (date) {
-      dailyHours[date] = (dailyHours[date] || 0) + duration;
-    }
-    
-    departmentHours[dept] = (departmentHours[dept] || 0) + duration;
-  });
-  
-  const dates = Object.keys(dailyHours);
-  const totalHours = Object.values(dailyHours).reduce((sum, h) => sum + h, 0);
-  const avgDailyHours = dates.length > 0 ? (totalHours / dates.length).toFixed(1) : 0;
-  
-  // Find most and least productive days
-  let mostProductiveDay = { date: 'N/A', hours: 0 };
-  let leastProductiveDay = { date: 'N/A', hours: Infinity };
-  
-  Object.entries(dailyHours).forEach(([date, hours]) => {
-    if (hours > mostProductiveDay.hours) {
-      mostProductiveDay = { date, hours };
-    }
-    if (hours < leastProductiveDay.hours) {
-      leastProductiveDay = { date, hours };
-    }
-  });
-  
-  // Calculate trend
-  const recentHours = dates.slice(-7).map(date => dailyHours[date]);
-  const trend = recentHours.length > 1 ? 
-    (recentHours[recentHours.length - 1] > recentHours[0] ? 'Increasing' : 'Decreasing') : 'Stable';
-  
-  // Department ranking
-  const deptRanking = Object.entries(departmentHours)
-    .sort(([,a], [,b]) => b - a)
-    .map(([dept, hours]) => `${dept}: ${hours.toFixed(1)}h`)
-    .join(', ');
-  
-  return {
-    totalHours: totalHours.toFixed(1),
-    avgDailyHours,
-    mostProductiveDay: `${mostProductiveDay.date} (${mostProductiveDay.hours.toFixed(1)}h)`,
-    leastProductiveDay: leastProductiveDay.hours === Infinity ? 'N/A' : `${leastProductiveDay.date} (${leastProductiveDay.hours.toFixed(1)}h)`,
-    trend,
-    departmentRanking: deptRanking || 'No department data'
-  };
-}
-
-/**
- * Detect real patterns in the data
- */
-function detectRealPatterns(data) {
-  const hourCounts = {};
-  const durations = [];
-  const dayTypes = { weekday: 0, weekend: 0 };
-  
-  data.shifts.forEach(shift => {
-    const startTime = shift['First Start Time'];
-    const duration = parseFloat(shift['Total Duration']) || 0;
-    const date = new Date(shift['Shift Date']);
-    
-    if (startTime) {
-      const hour = parseInt(startTime.split(':')[0]);
-      hourCounts[hour] = (hourCounts[hour] || 0) + 1;
-    }
-    
-    if (duration > 0) {
-      durations.push(duration);
-    }
-    
-    if (!isNaN(date.getTime())) {
-      const dayOfWeek = date.getDay();
-      if (dayOfWeek === 0 || dayOfWeek === 6) {
-        dayTypes.weekend++;
-      } else {
-        dayTypes.weekday++;
+        Logger.log(`📊 Updating shift ${shiftId}: ${oldTotalDuration} → ${totalDuration}`);
+        
+        // Update Total Duration (Column H)
+        sheet.getRange(rowNumber, 8).setValue(totalDuration);
+        
+        // Update Last Updated timestamp (Column M)
+        sheet.getRange(rowNumber, 13).setValue(new Date());
+        
+        Logger.log(`✅ Total duration updated successfully`);
+        
+        return {
+          success: true,
+          message: `Total duration updated from ${oldTotalDuration} to ${totalDuration}`,
+          data: {
+            shiftId: shiftId,
+            oldTotalDuration: oldTotalDuration,
+            newTotalDuration: totalDuration,
+            rowNumber: rowNumber,
+            reason: reason || 'Duration correction'
+          }
+        };
       }
     }
-  });
-  
-  // Find peak hour
-  const peakHour = Object.entries(hourCounts)
-    .sort(([,a], [,b]) => b - a)[0];
-  
-  // Find common duration
-  const avgDuration = durations.length > 0 ? 
-    (durations.reduce((sum, d) => sum + d, 0) / durations.length).toFixed(1) : 0;
-  
-  return {
-    peakHours: peakHour ? `${peakHour[0]}:00 (${peakHour[1]} shifts)` : 'No pattern detected',
-    commonDuration: avgDuration,
-    weekendComparison: `Weekdays: ${dayTypes.weekday}, Weekends: ${dayTypes.weekend}`,
-    seasonalTrends: 'Data analysis ongoing'
-  };
-}
-
-/**
- * Analyze departments from real data
- */
-function analyzeDepartments(data) {
-  const deptStats = {};
-  
-  data.shifts.forEach(shift => {
-    const dept = shift['Department'] || 'Unknown';
-    const empName = shift['Employee Name'];
-    const duration = parseFloat(shift['Total Duration']) || 0;
-    
-    if (!deptStats[dept]) {
-      deptStats[dept] = {
-        name: dept,
-        totalHours: 0,
-        employees: new Set(),
-        shifts: 0
-      };
-    }
-    
-    deptStats[dept].totalHours += duration;
-    deptStats[dept].employees.add(empName);
-    deptStats[dept].shifts++;
-  });
-  
-  return Object.values(deptStats).map(dept => ({
-    name: dept.name,
-    totalHours: dept.totalHours.toFixed(1),
-    employeeCount: dept.employees.size,
-    avgHours: dept.employees.size > 0 ? (dept.totalHours / dept.employees.size).toFixed(1) : 0
-  }));
-}
-
-/**
- * Generate real insights from data analysis
- */
-function generateRealInsights(data) {
-  const completedShifts = data.shifts.filter(s => s.Status === 'COMPLETED').length;
-  const totalShifts = data.shifts.length;
-  
-  return {
-    dataQuality: totalShifts > 0 ? Math.min(100, (completedShifts / totalShifts) * 100 + 20) : 0,
-    utilization: totalShifts > 0 ? Math.min(100, (data.statistics.totalHours / (data.staffCount * 8 * 30)) * 100) : 0,
-    efficiency: totalShifts > 0 ? (completedShifts / totalShifts) * 100 : 0
-  };
-}
-
-/**
- * Generate data-driven recommendations
- */
-function generateDataDrivenRecommendations(data) {
-  const recommendations = [];
-  const employeeAnalysis = analyzeEmployeePerformance(data);
-  const productivityStats = calculateProductivityStats(data);
-  
-  if (employeeAnalysis.bestEmployee.score > 80) {
-    recommendations.push(`Consider ${employeeAnalysis.bestEmployee.name} for leadership roles (top performer with ${employeeAnalysis.bestEmployee.score}/100 score)`);
-  }
-  
-  if (parseFloat(productivityStats.avgDailyHours) < 6) {
-    recommendations.push('Average daily hours are below optimal - consider increasing shift schedules');
-  }
-  
-  if (data.statistics.completedShifts / data.statistics.totalShifts < 0.8) {
-    recommendations.push('Completion rate is below 80% - review shift completion processes');
-  }
-  
-  if (data.staffCount < 5) {
-    recommendations.push('Consider expanding staff team for better coverage and redundancy');
-  }
-  
-  if (recommendations.length === 0) {
-    recommendations.push('System performance is optimal - maintain current operational standards');
-  }
-  
-  return recommendations;
-}
-
-/**
- * Run experimental AI features
- */
-function runExperimentalAI(data) {
-  try {
-    const { experimentType, parameters } = data;
-    
-    Logger.log(`🧪 Running experimental AI: ${experimentType}`);
-    
-    const dataResult = getComprehensiveSheetData();
-    if (!dataResult.success) {
-      return dataResult;
-    }
-    
-    let result = {};
-    
-    switch (experimentType) {
-      case 'data-insights':
-        result = generateDeepDataInsights(dataResult.data);
-        break;
-      case 'pattern-prediction':
-        result = generatePatternPredictions(dataResult.data);
-        break;
-      case 'optimization-engine':
-        result = generateOptimizationSuggestions(dataResult.data);
-        break;
-      case 'anomaly-analysis':
-        result = generateAdvancedAnomalyAnalysis(dataResult.data);
-        break;
-      case 'workforce-modeling':
-        result = generateWorkforceModel(dataResult.data);
-        break;
-      default:
-        return { success: false, message: 'Unknown experiment type' };
-    }
-    
-    Logger.log(`✅ Experimental AI completed: ${experimentType}`);
     
     return {
-      success: true,
-      data: {
-        experimentType: experimentType,
-        result: result,
-        dataUsed: dataResult.data.statistics,
-        timestamp: new Date().toISOString()
-      }
+      success: false,
+      message: `Shift with ID ${shiftId} not found`
     };
     
   } catch (error) {
-    Logger.log(`❌ Error in experimental AI: ${error}`);
-    return { success: false, message: `Experimental AI failed: ${error.message}` };
-  }
-}
-
-/**
- * Generate deep data insights
- */
-function generateDeepDataInsights(data) {
-  const efficiency = Math.round(Math.random() * 20 + 75);
-  const utilization = Math.round(Math.random() * 15 + 80);
-  const satisfaction = Math.round(Math.random() * 10 + 85);
-  const variationPercent = Math.round(Math.random() * 20 + 10);
-  
-  const insightsText = `
-📈 **Deep Data Insights Report**
-
-**Key Findings:**
-• Analyzed ${data.statistics.totalShifts} shifts totaling ${data.statistics.totalHours.toFixed(1)} hours
-• Average shift duration: ${data.statistics.averageShiftDuration} hours
-• Departments covered: ${data.statistics.departments.join(', ')}
-• Peak performance hours: 9 AM - 2 PM
-
-**Performance Metrics:**
-• 📊 Overall Efficiency: ${efficiency}%
-• 🎯 Resource Utilization: ${utilization}%
-• 😊 Estimated Satisfaction: ${satisfaction}%
-
-**Department Analysis:**
-• Department utilization varies by ${variationPercent}%
-• ${data.statistics.departments.length} departments actively tracked
-• Workload distribution appears ${utilization > 85 ? 'well-balanced' : 'could be optimized'}
-
-**💡 Key Insight:** Your workforce is performing ${efficiency > 80 ? 'excellently' : efficiency > 70 ? 'well' : 'adequately'} with ${utilization > 85 ? 'optimal' : 'good'} resource utilization.
-  `.trim();
-  
-  return {
-    analysisText: insightsText,
-    insights: [
-      `Analyzed ${data.statistics.totalShifts} shifts with ${data.statistics.totalHours.toFixed(1)} total hours`,
-      `Average shift efficiency: ${(data.statistics.averageShiftDuration * 1.2).toFixed(1)} productivity units`,
-      `Department utilization varies by ${variationPercent}%`,
-      `Peak performance hours identified: 9 AM - 2 PM`
-    ],
-    metrics: {
-      efficiency: efficiency,
-      utilization: utilization,
-      satisfaction: satisfaction
-    }
-  };
-}
-
-/**
- * Generate pattern predictions
- */
-function generatePatternPredictions(data) {
-  const productivityIncrease = Math.round(Math.random() * 10 + 5);
-  const optimalStaff = Math.ceil(data.statistics.totalStaff * 0.8);
-  const completionRate = Math.round(Math.random() * 5 + 92);
-  const confidence = Math.round(Math.random() * 10 + 85);
-  
-  const predictionsText = `
-🔮 **Pattern Prediction Analysis**
-
-**Forecast (Next 7-14 days):**
-• 📈 Productivity expected to increase by ${productivityIncrease}%
-• 👥 Optimal staffing level: ${optimalStaff} employees
-• ✅ Projected completion rate: ${completionRate}%
-• 🎯 Prediction confidence: ${confidence}%
-
-**Pattern Analysis:**
-Based on current trends in your ${data.statistics.totalShifts} shifts:
-• Work patterns show ${confidence > 90 ? 'strong' : confidence > 80 ? 'good' : 'moderate'} consistency
-• ${data.statistics.departments.length} departments maintain regular schedules
-• Average shift duration of ${data.statistics.averageShiftDuration} hours is ${data.statistics.averageShiftDuration > 8 ? 'above' : 'within'} standard range
-
-**📊 Current Performance:**
-• Total hours tracked: ${data.statistics.totalHours.toFixed(1)}
-• Active departments: ${data.statistics.departments.join(', ')}
-• Date range: ${new Date(data.statistics.dateRange.earliest).toLocaleDateString()} - ${new Date(data.statistics.dateRange.latest).toLocaleDateString()}
-
-**💡 Recommendation:** ${productivityIncrease > 7 ? 'Expect strong performance growth' : 'Steady improvement anticipated'} - maintain current operational patterns.
-  `.trim();
-  
-  return {
-    analysisText: predictionsText,
-    predictions: [
-      `Next week productivity likely to increase by ${productivityIncrease}%`,
-      `Optimal staffing level: ${optimalStaff} employees`,
-      `Projected completion rate: ${completionRate}%`
-    ],
-    confidence: confidence,
-    timeframe: '7-14 days'
-  };
-}
-
-/**
- * Generate optimization suggestions
- */
-function generateOptimizationSuggestions(data) {
-  const avgShiftHours = data.statistics.averageShiftDuration;
-  const totalStaff = data.statistics.totalStaff;
-  const totalShifts = data.statistics.totalShifts;
-  
-  const optimizationText = `
-⚡ **Workforce Optimization Engine**
-
-**Optimization Opportunities:**
-
-🔄 **Workload Distribution**
-• Redistribute workload during peak hours for better balance
-• Current average: ${avgShiftHours} hours per shift
-
-⏰ **Scheduling Improvements**
-• Implement staggered shift starts to reduce overlap
-• Optimize break scheduling for ${totalStaff} staff members
-
-🎯 **Skill Development**
-• Cross-train staff for flexibility across ${data.statistics.departments.length} departments
-• Focus on multi-department capabilities
-
-📊 **Current Analysis:**
-• Total shifts analyzed: ${totalShifts}
-• Staff utilization: ${totalStaff} active employees
-• Department coverage: ${data.statistics.departments.join(', ')}
-• Total operational hours: ${data.statistics.totalHours.toFixed(1)}
-
-**Implementation Guide:**
-• 🎯 Expected Impact: High productivity improvement
-• 💪 Implementation Effort: Medium
-• ⏱️ Timeline: 2-4 weeks for full optimization
-• 📈 ROI: Estimated 15-25% efficiency gain
-
-**Priority Actions:**
-1. Start with staggered scheduling (immediate impact)
-2. Redistribute peak hour workload (week 2)
-3. Begin cross-training program (ongoing)
-4. Optimize break patterns (week 3-4)
-
-💡 **Next Steps:** Begin with scheduling adjustments as they provide immediate benefits with minimal disruption.
-  `.trim();
-  
-  return {
-    analysisText: optimizationText,
-    suggestions: [
-      'Redistribute workload during peak hours',
-      'Implement staggered shift starts',
-      'Cross-train staff for flexibility',
-      'Optimize break scheduling'
-    ],
-    impact: 'High',
-    implementation: 'Medium effort'
-  };
-}
-
-/**
- * Generate advanced anomaly analysis
- */
-function generateAdvancedAnomalyAnalysis(data) {
-  const durationVariance = Math.floor(Math.random() * 3);
-  const scheduleGaps = Math.floor(Math.random() * 2);
-  const patternDeviation = Math.floor(Math.random() * 5);
-  
-  // Calculate overall health based on anomaly counts
-  const totalAnomalies = durationVariance + scheduleGaps + patternDeviation;
-  let overallHealth = 'Excellent';
-  let healthIcon = '🟢';
-  let recommendation = 'Continue current practices - your workforce management is running smoothly!';
-  
-  if (totalAnomalies > 8) {
-    overallHealth = 'Needs Attention';
-    healthIcon = '🔴';
-    recommendation = 'Consider reviewing scheduling patterns and addressing identified issues.';
-  } else if (totalAnomalies > 5) {
-    overallHealth = 'Good';
-    healthIcon = '🟡';
-    recommendation = 'Minor improvements possible, but overall performance is solid.';
-  }
-  
-  // Generate user-friendly analysis
-  const analysisText = `
-📊 **Workforce Anomaly Analysis Report**
-
-${healthIcon} **Overall Health: ${overallHealth}**
-
-**What I Found:**
-• **Shift Duration Consistency:** ${durationVariance === 0 ? 'Perfect! All shifts are consistent in length.' : `${durationVariance} minor variations in shift lengths detected.`}
-• **Schedule Coverage:** ${scheduleGaps === 0 ? 'Complete coverage - no gaps found!' : `${scheduleGaps} small gap${scheduleGaps > 1 ? 's' : ''} in schedule coverage detected.`}
-• **Work Patterns:** ${patternDeviation === 0 ? 'All work patterns are normal.' : `${patternDeviation} minor deviation${patternDeviation > 1 ? 's' : ''} from typical patterns.`}
-
-**Data Summary:**
-- Total Shifts Analyzed: ${data.statistics.totalShifts}
-- Total Staff: ${data.statistics.totalStaff}
-- Total Hours: ${data.statistics.totalHours.toFixed(1)} hours
-- Average Shift: ${data.statistics.averageShiftDuration} hours
-- Date Range: ${new Date(data.statistics.dateRange.earliest).toLocaleDateString()} to ${new Date(data.statistics.dateRange.latest).toLocaleDateString()}
-
-**💡 Recommendation:** ${recommendation}
-  `.trim();
-  
-  return {
-    analysisText: analysisText,
-    anomalies: [
-      { type: 'Duration variance', severity: 'Low', count: durationVariance },
-      { type: 'Schedule gaps', severity: 'Medium', count: scheduleGaps },
-      { type: 'Pattern deviation', severity: 'Low', count: patternDeviation }
-    ],
-    overallHealth: overallHealth,
-    recommendation: recommendation
-  };
-}
-
-/**
- * Generate workforce model
- */
-function generateWorkforceModel(data) {
-  const currentStaff = data.statistics.totalStaff;
-  const optimalSize = Math.ceil(currentStaff * 1.1);
-  const capacityUtilization = Math.round(Math.random() * 10 + 85);
-  const additionalStaff = optimalSize - currentStaff;
-  
-  const workforceText = `
-👥 **Workforce Modeling Analysis**
-
-**Current Workforce Overview:**
-• Total Staff: ${currentStaff} employees
-• Active Departments: ${data.statistics.departments.length} (${data.statistics.departments.join(', ')})
-• Total Hours Managed: ${data.statistics.totalHours.toFixed(1)} hours
-• Shifts Tracked: ${data.statistics.totalShifts}
-
-**Optimal Workforce Model:**
-• 🎯 Recommended Size: ${optimalSize} employees
-• 📊 Current Capacity: ${capacityUtilization}%
-• 📈 Skill Distribution: Balanced across departments
-• 🚀 Growth Potential: High
-
-**Analysis Results:**
-${additionalStaff > 0 ? 
-  `• Recommendation: Consider hiring ${additionalStaff} additional staff member${additionalStaff > 1 ? 's' : ''}` :
-  '• Staffing level appears optimal for current workload'
-}
-• Current utilization rate: ${capacityUtilization}%
-• Workload distribution: ${capacityUtilization > 90 ? 'Near capacity - hiring recommended' : capacityUtilization > 80 ? 'Well-utilized with room for growth' : 'Good capacity available'}
-
-**6-Month Forecast:**
-📈 Positive trend expected based on current patterns
-• Productivity growth anticipated
-• Department expansion opportunities identified
-• Skill development recommended in cross-functional areas
-
-**Strategic Recommendations:**
-1. ${additionalStaff > 0 ? `Hire ${additionalStaff} additional staff for optimal coverage` : 'Maintain current staffing levels'}
-2. Focus on skill development and cross-training
-3. Prepare for potential department expansion
-4. Implement performance tracking for new hires
-
-💡 **Key Insight:** Your workforce model shows ${capacityUtilization > 85 ? 'strong utilization' : 'good potential'} with ${optimalSize > currentStaff ? 'growth opportunities' : 'stable operations'}.
-  `.trim();
-  
-  return {
-    analysisText: workforceText,
-    model: {
-      optimalSize: optimalSize,
-      skillDistribution: 'Balanced',
-      capacityUtilization: capacityUtilization + '%',
-      growthPotential: 'High'
-    },
-    forecast: '6-month positive trend',
-    recommendations: [
-      additionalStaff > 0 ? `Hire ${additionalStaff} additional staff` : 'Maintain current staffing', 
-      'Focus on skill development'
-    ]
-  };
-}
-
-/**
- * Get AI analysis suggestions
- */
-function getAIAnalysisSuggestions() {
-  try {
-    const suggestions = [
-      {
-        title: 'Productivity Analysis',
-        description: 'Analyze staff productivity patterns and trends',
-        prompt: 'Analyze productivity patterns across all departments and provide insights on performance trends'
-      },
-      {
-        title: 'Workload Distribution',
-        description: 'Examine how work is distributed across staff',
-        prompt: 'Show me the workload distribution across all staff members and departments'
-      },
-      {
-        title: 'Schedule Optimization',
-        description: 'Get suggestions for optimal scheduling',
-        prompt: 'What are the optimal scheduling patterns based on our historical data?'
-      },
-      {
-        title: 'Department Comparison',
-        description: 'Compare performance across departments',
-        prompt: 'Compare productivity and efficiency metrics across all departments'
-      },
-      {
-        title: 'Overtime Analysis',
-        description: 'Analyze overtime patterns and costs',
-        prompt: 'Analyze overtime patterns and suggest ways to optimize working hours'
-      },
-      {
-        title: 'Efficiency Insights',
-        description: 'Discover efficiency improvement opportunities',
-        prompt: 'What are the main opportunities to improve overall workforce efficiency?'
-      }
-    ];
-    
+    Logger.log(`❌ Error updating total duration: ${error}`);
     return {
-      success: true,
-      data: suggestions
+      success: false,
+      message: 'Error updating total duration: ' + error.toString(),
+      error: error.toString()
     };
-    
-  } catch (error) {
-    Logger.log(`❌ Error getting AI suggestions: ${error}`);
-    return { success: false, message: `Error loading suggestions: ${error.message}` };
   }
 }
 
-/**
- * Get AI insights dashboard
- */
-function getAIInsightsDashboard() {
+// 🔥 REAL-TIME SHEET SYNC FUNCTIONS
+// These functions provide immediate Google Sheets updates
+
+function updateShiftDurationAndEndTime(data) {
   try {
-    const dataResult = getComprehensiveSheetData();
-    if (!dataResult.success) {
-      return dataResult;
+    Logger.log('🔧 === UPDATE SHIFT DURATION AND END TIME ===');
+    
+    const { shiftId, totalDuration, lastEndTime, reason } = data;
+    
+    if (!shiftId) {
+      return { success: false, message: 'Missing shiftId' };
     }
     
-    const data = dataResult.data;
+    const spreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const sheet = spreadsheet.getSheetByName(SHIFTS_SHEET_NAME);
     
-    // Calculate insights
-    const productivityScore = Math.round((data.statistics.completedShifts / data.statistics.totalShifts) * 100);
-    const efficiencyRating = Math.min(10, Math.round((data.statistics.averageShiftDuration / 8) * 10));
+    if (!sheet) {
+      return { success: false, message: 'Shifts sheet not found' };
+    }
     
-    const insights = [
-      `${data.statistics.totalShifts} total shifts analyzed with ${data.statistics.totalHours.toFixed(1)} hours`,
-      `Average shift duration of ${data.statistics.averageShiftDuration} hours indicates good time management`,
-      `${data.statistics.completedShifts} completed shifts show ${productivityScore}% completion rate`,
-      `${data.statistics.departments.length} departments are actively tracked`,
-      `Data quality is high with comprehensive tracking across all metrics`
-    ];
+    // Find the shift by ID
+    const lastRow = sheet.getLastRow();
+    if (lastRow <= 1) {
+      return { success: false, message: 'No shifts found' };
+    }
     
-    return {
-      success: true,
-      data: {
-        productivityScore: productivityScore,
-        efficiencyRating: efficiencyRating,
-        insights: insights,
-        dataQuality: 'High',
-        lastUpdated: new Date().toISOString()
+    const allData = sheet.getRange(2, 1, lastRow - 1, 13).getValues();
+    
+    for (let i = 0; i < allData.length; i++) {
+      const row = allData[i];
+      const rowShiftId = row[0];
+      
+      if (rowShiftId === shiftId) {
+        const rowNumber = i + 2;
+        
+        Logger.log(`📊 Updating shift ${shiftId}: duration=${totalDuration}, endTime=${lastEndTime}`);
+        
+        // Update Last End Time (Column G - index 6)
+        if (lastEndTime) {
+          sheet.getRange(rowNumber, 7).setValue(lastEndTime);
+        }
+        
+        // Update Total Duration (Column H - index 7) 
+        if (totalDuration !== undefined) {
+          sheet.getRange(rowNumber, 8).setValue(totalDuration);
+        }
+        
+        // Update Last Updated timestamp (Column M - index 12)
+        sheet.getRange(rowNumber, 13).setValue(new Date());
+        
+        Logger.log(`✅ Duration and end time updated successfully`);
+        
+        return {
+          success: true,
+          message: `Updated duration to ${totalDuration} hrs and end time to ${lastEndTime}`,
+          data: { shiftId, totalDuration, lastEndTime, reason }
+        };
       }
-    };
+    }
+    
+    return { success: false, message: `Shift with ID ${shiftId} not found` };
     
   } catch (error) {
-    Logger.log(`❌ Error generating AI insights dashboard: ${error}`);
-    return { success: false, message: `Error generating insights: ${error.message}` };
+    Logger.log(`❌ Error updating duration and end time: ${error}`);
+    return {
+      success: false,
+      message: 'Error updating duration and end time: ' + error.toString()
+    };
   }
 }
+
+function updateShiftSegments(data) {
+  try {
+    Logger.log('🔧 === UPDATE SHIFT SEGMENTS ===');
+    
+    const { shiftId, segments, reason } = data;
+    
+    if (!shiftId || !segments) {
+      return { success: false, message: 'Missing shiftId or segments' };
+    }
+    
+    const spreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const sheet = spreadsheet.getSheetByName(SHIFTS_SHEET_NAME);
+    
+    if (!sheet) {
+      return { success: false, message: 'Shifts sheet not found' };
+    }
+    
+    // Find the shift by ID
+    const lastRow = sheet.getLastRow();
+    if (lastRow <= 1) {
+      return { success: false, message: 'No shifts found' };
+    }
+    
+    const allData = sheet.getRange(2, 1, lastRow - 1, 13).getValues();
+    
+    for (let i = 0; i < allData.length; i++) {
+      const row = allData[i];
+      const rowShiftId = row[0];
+      
+      if (rowShiftId === shiftId) {
+        const rowNumber = i + 2;
+        
+        Logger.log(`📊 Updating segments for shift ${shiftId}`);
+        
+        // Update Segments Data (Column J - index 9)
+        sheet.getRange(rowNumber, 10).setValue(JSON.stringify(segments));
+        
+        // Update Number of Segments (Column I - index 8)
+        sheet.getRange(rowNumber, 9).setValue(segments.length);
+        
+        // Update Last Updated timestamp (Column M - index 12)
+        sheet.getRange(rowNumber, 13).setValue(new Date());
+        
+        Logger.log(`✅ Segments updated successfully`);
+        
+        return {
+          success: true,
+          message: `Updated ${segments.length} segments`,
+          data: { shiftId, segments, reason }
+        };
+      }
+    }
+    
+    return { success: false, message: `Shift with ID ${shiftId} not found` };
+    
+  } catch (error) {
+    Logger.log(`❌ Error updating segments: ${error}`);
+    return {
+      success: false,
+      message: 'Error updating segments: ' + error.toString()
+    };
+  }
+}
+
+function syncCompleteShift(data) {
+  try {
+    Logger.log('🔧 === SYNC COMPLETE SHIFT ===');
+    
+    const { shiftId, status, totalDuration, lastEndTime, segments, reason } = data;
+    
+    if (!shiftId) {
+      return { success: false, message: 'Missing shiftId' };
+    }
+    
+    const spreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const sheet = spreadsheet.getSheetByName(SHIFTS_SHEET_NAME);
+    
+    if (!sheet) {
+      return { success: false, message: 'Shifts sheet not found' };
+    }
+    
+    // Find the shift by ID
+    const lastRow = sheet.getLastRow();
+    if (lastRow <= 1) {
+      return { success: false, message: 'No shifts found' };
+    }
+    
+    const allData = sheet.getRange(2, 1, lastRow - 1, 13).getValues();
+    
+    for (let i = 0; i < allData.length; i++) {
+      const row = allData[i];
+      const rowShiftId = row[0];
+      
+      if (rowShiftId === shiftId) {
+        const rowNumber = i + 2;
+        
+        Logger.log(`📊 Complete sync for shift ${shiftId}: status=${status}, duration=${totalDuration}, endTime=${lastEndTime}`);
+        
+        // 🔥 CALCULATE firstStartTime from segments if not provided
+        let firstStartTime = data.firstStartTime;
+        if (!firstStartTime && segments && segments.length > 0) {
+          // Get the earliest start time from segments
+          const sortedSegments = [...segments].sort((a, b) => {
+            const timeA = a.startTime.split(':').map(Number);
+            const timeB = b.startTime.split(':').map(Number);
+            return (timeA[0] * 60 + timeA[1]) - (timeB[0] * 60 + timeB[1]);
+          });
+          firstStartTime = sortedSegments[0].startTime;
+          Logger.log(`📋 Calculated firstStartTime from segments: ${firstStartTime}`);
+        }
+        
+        // Update First Start Time (Column F - index 5) - MISSING FROM REVEAL SLOTS!
+        if (firstStartTime) {
+          sheet.getRange(rowNumber, 6).setValue(firstStartTime);
+          Logger.log(`✅ Updated First Start Time: ${firstStartTime}`);
+        }
+        
+        // Update Last End Time (Column G - index 6)
+        if (lastEndTime) {
+          sheet.getRange(rowNumber, 7).setValue(lastEndTime);
+        }
+        
+        // Update Total Duration (Column H - index 7) 
+        if (totalDuration !== undefined) {
+          sheet.getRange(rowNumber, 8).setValue(totalDuration);
+        }
+        
+        // Update Segments Data (Column J - index 9)
+        if (segments) {
+          sheet.getRange(rowNumber, 10).setValue(JSON.stringify(segments));
+          sheet.getRange(rowNumber, 9).setValue(segments.length);
+        }
+        
+        // Update Status (Column K - index 10)
+        if (status) {
+          sheet.getRange(rowNumber, 11).setValue(status);
+        }
+        
+        // Update Last Updated timestamp (Column M - index 12)
+        sheet.getRange(rowNumber, 13).setValue(new Date());
+        
+        Logger.log(`✅ Complete shift sync successful - Updated columns: F(Start), G(End), H(Duration), I(NumSegments), J(SegmentsData), K(Status), M(LastUpdated)`);
+        
+        return {
+          success: true,
+          message: `Complete shift sync completed with First Start Time update`,
+          data: { shiftId, status, totalDuration, lastEndTime, firstStartTime, segments, reason }
+        };
+      }
+    }
+    
+    return { success: false, message: `Shift with ID ${shiftId} not found` };
+    
+  } catch (error) {
+    Logger.log(`❌ Error in complete shift sync: ${error}`);
+    return {
+      success: false,
+      message: 'Error in complete shift sync: ' + error.toString()
+    };
+  }
+}
+          
