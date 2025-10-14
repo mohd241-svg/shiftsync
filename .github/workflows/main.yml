@@ -1,5 +1,5 @@
- # Force workflow refresh: 2025-10-14
- name: CI/CD Pipeline
+# Force workflow refresh: 2025-10-14
+name: CI/CD Pipeline
 
 on:
   push:
