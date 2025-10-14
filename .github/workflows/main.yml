@@ -42,9 +42,8 @@ jobs:
           CI: true
       
       - name: Build application
-        run: npm run build
+        run: CI=false npm run build
         env:
-          CI: false
           GENERATE_SOURCEMAP: false
           NODE_ENV: production
       
