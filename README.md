@@ -1,4 +1,4 @@
-# � Staff Portal - AI-Powered Workforce Management System
+# 🚀 Staff Portal - AI-Powered Workforce Management System
 
 [![React](https://img.shields.io/badge/React-19.1.0-blue.svg)](https://reactjs.org/)
 [![Material-UI](https://img.shields.io/badge/Material--UI-7.2.0-green.svg)](https://mui.com/)
@@ -22,7 +22,7 @@ A comprehensive, AI-powered workforce management system with real-time shift tra
 - **Custom AI Queries** - Natural language analysis with confidence scoring
 - **Smart Schedule Suggestions** - AI-recommended shift optimizations
 
-### � Staff Management
+### 👥 Staff Management
 - **Complete CRUD Operations** - Add, edit, delete staff with form validation
 - **Role-based Access Control** - Admin and Staff dashboards with appropriate permissions
 - **Department Management** - Organize staff by departments and roles
@@ -34,7 +34,7 @@ A comprehensive, AI-powered workforce management system with real-time shift tra
 - **Real-time Status Sync** - Backend synchronization with conflict resolution
 - **Comprehensive Logging** - Detailed audit trails and debugging information
 
-## � Quick Start
+## ⚡ Quick Start
 
 ### Prerequisites
 - Node.js (v14 or higher)
