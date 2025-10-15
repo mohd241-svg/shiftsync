@@ -631,27 +631,29 @@ const AdminDashboard = () => {
   // Time period options
   const timePeriodOptions = [
   { value: 'today', label: 'Today' },
+  { value: 'last7days', label: 'Last 7 Days' },
+  { value: 'last30days', label: 'Last 30 Days' },
   { value: 'week', label: 'This Week' },
   { value: 'month', label: 'This Month' },
   { value: 'quarter', label: 'This Quarter' },
   { value: 'year', label: 'This Year' },
-  { value: 'last7days', label: 'Last 7 Days' },
-  { value: 'last30days', label: 'Last 30 Days' },
   { value: 'custom', label: 'Custom Range' },
+  { value: 'monthlyTotalPerEmployee', label: 'Monthly Total per Employee' },
   { value: 'monthlyAvgPerEmployee', label: 'Monthly Average per Employee' },
   { value: 'weeklyTotalPerEmployee', label: 'Weekly Total per Employee' },
   { value: 'weeklyAvgPerEmployee', label: 'Weekly Average per Employee' },
   { value: 'quarterlyTotalPerEmployee', label: 'Quarterly Total per Employee' },
   { value: 'quarterlyAvgPerEmployee', label: 'Quarterly Average per Employee' },
-  { value: 'yearlyAvgPerEmployee', label: 'Yearly Average per Employee' },
   { value: 'yearlyTotalPerEmployee', label: 'Yearly Total per Employee' },
+  { value: 'yearlyAvgPerEmployee', label: 'Yearly Average per Employee' },
   { value: 'allTimeTotalPerEmployee', label: 'All Time Total per Employee' },
   { value: 'weeklyTotal', label: 'Weekly Total (All Employees)' },
   { value: 'monthlyTotal', label: 'Monthly Total (All Employees)' },
   { value: 'quarterlyTotal', label: 'Quarterly Total (All Employees)' },
   { value: 'yearlyTotal', label: 'Yearly Total (All Employees)' },
   { value: 'allTimeTotal', label: 'All Time Total (All Employees)' },
-  { value: 'allTimeAverage', label: 'All Time Average (All Employees)' }
+  { value: 'allTimeAverage', label: 'All Time Average (All Employees)' },
+  { value: 'allTimeData', label: 'All Time Data (All Employees)' } // New option for all data
   ];
 
   // Load initial data
@@ -1587,7 +1589,6 @@ const AdminDashboard = () => {
   const getDateRangeForPeriod = (period, customRange = customDateRange) => {
     const today = new Date();
     const todayStr = today.toISOString().split('T')[0];
-    
     switch (period) {
       case 'today':
         return { start: todayStr, end: todayStr };
@@ -1614,6 +1615,14 @@ const AdminDashboard = () => {
         return { start: last30.toISOString().split('T')[0], end: todayStr };
       case 'custom':
         return customRange;
+      case 'monthlyTotalPerEmployee':
+        // Logic: Get current month range
+        const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+        const endOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+        return { start: startOfMonth.toISOString().split('T')[0], end: endOfMonth.toISOString().split('T')[0] };
+      case 'allTimeData':
+        // Logic: Show all data from earliest to far future
+        return { start: '2020-01-01', end: '2030-12-31' };
       default:
         return { start: todayStr, end: todayStr };
     }
@@ -2619,7 +2628,7 @@ const AdminDashboard = () => {
             <div className="col-12">
               <div className="card">
                 <div className="card-header">
-                  <h5 className="card-title mb-0">� Quick Actions - Data Viewer</h5>
+                  <h5 className="card-title mb-0">⚡ Quick Actions - Data Viewer</h5>
                 </div>
                 <div className="card-body">
                   <div className="row g-3 align-items-end">
