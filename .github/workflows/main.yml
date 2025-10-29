@@ -1,4 +1,4 @@
-# Force workflow refresh: 2025-10-29
+# Force workflow refresh: 2025-10-29-v2
 name: CI/CD Pipeline
 
 on:
