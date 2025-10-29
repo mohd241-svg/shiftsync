@@ -1,4 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { TextField } from '@mui/material';
+import { DatePicker } from '@mui/x-date-pickers/DatePicker';
+import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
+import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { 
   Button, 
   Grid, 
@@ -30,7 +34,10 @@ import {
   handleAPIError,
   makeAPICall,
   syncStatusToSheet,
-  submitTimeSegments
+  submitTimeSegments,
+  applyFrontendSmartStatus,
+  fixShiftStatus,
+  getCurrentShiftWithCrossMidnight
 } from '../../services/appScriptAPI';
 import TimeSegmentEntry from '../TimeSegmentEntry/TimeSegmentEntry';
 
@@ -39,9 +46,129 @@ const ShiftEntry = ({ refreshTrigger }) => {
   const [currentShift, setCurrentShift] = useState(null);
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
+  const [selectedDate, setSelectedDate] = useState(new Date());
+
+  // When the date changes, clear current shift and fetch new data
+  useEffect(() => {
+    if (user && selectedDate) {
+      setCurrentShift(null);
+      setMessage('Loading shift data for selected date...');
+      // Always enforce DRAFT for future dates, skip correction logic
+      (async () => {
+        let response = await getCurrentShiftWithCrossMidnight({
+          employeeId: user.id,
+          date: selectedDate.toISOString().split('T')[0],
+          forceRefresh: true
+        });
+        if (response.success && response.data) {
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          let shiftDate = new Date(selectedDate);
+          shiftDate.setHours(0, 0, 0, 0);
+          // If future date, always display DRAFT and skip correction
+          if (shiftDate > today) {
+            response.data.status = 'DRAFT';
+            setCurrentShift(response.data);
+            setMessage(`📊 Current status: DRAFT (future date)`);
+            return;
+          }
+          // For today/past, use enhanced smart status and correct if needed
+          const correction = detectStatusCorrection(response.data);
+          if (correction.needsCorrection) {
+            console.log(`🔄 ShiftEntry STATUS CORRECTION: ${correction.originalStatus} → ${correction.correctedStatus}`);
+            try {
+              // Use the robust fixShiftStatus system
+              const fixResult = await fixShiftStatus({
+                shiftId: response.data.shiftId,
+                correctStatus: correction.correctedStatus
+              });
+              
+              if (fixResult.success) {
+                console.log('✅ ShiftEntry status correction applied successfully');
+                await new Promise(resolve => setTimeout(resolve, 1000));
+              } else {
+                console.warn('⚠️ fixShiftStatus failed, falling back to syncStatusToSheet');
+                // Fallback to original method
+                await syncStatusToSheet(
+                  response.data.shiftId,
+                  correction.correctedStatus,
+                  `Smart status update: ${correction.originalStatus} → ${correction.correctedStatus}`
+                );
+                await new Promise(resolve => setTimeout(resolve, 1000));
+              }
+            } catch (error) {
+              console.error('❌ Status correction error:', error);
+              setMessage(`❌ Error updating status: ${error.message}`);
+            }
+            
+            response = await getCurrentShiftWithCrossMidnight({
+              employeeId: user.id,
+              date: selectedDate.toISOString().split('T')[0],
+              forceRefresh: true
+            });
+          }
+          setCurrentShift(response.data);
+          setMessage(`📊 Current status: ${response.data.status} (verified)`);
+        } else {
+          setCurrentShift(null);
+          let dateStr = 'today';
+          if (selectedDate instanceof Date && !isNaN(selectedDate)) {
+            dateStr = selectedDate.toLocaleDateString('en-US');
+          }
+          setMessage(`No shift found for ${dateStr}.`);
+        }
+      })();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedDate]);
 
   // Enhanced Smart Status Calculation (synchronized with AdminDashboard)
+  // Enhanced status determination using the same robust logic as ShiftHistory
   const determineSmartStatus = (shiftData) => {
+    const smartStatusResult = applyFrontendSmartStatus(shiftData);
+    console.log('🧮 ShiftEntry - Smart status result:', {
+      status: smartStatusResult.status,
+      corrected: smartStatusResult._statusCorrected,
+      reason: smartStatusResult._correctionReason
+    });
+    return smartStatusResult.status;
+  };
+
+  // Enhanced status correction detection
+  const detectStatusCorrection = (shiftData) => {
+    const smartStatusResult = applyFrontendSmartStatus(shiftData);
+    return {
+      needsCorrection: smartStatusResult._statusCorrected,
+      correctedStatus: smartStatusResult.status,
+      reason: smartStatusResult._correctionReason,
+      originalStatus: shiftData?.status
+    };
+  };
+
+  // LEGACY FALLBACK: Keep original logic as backup (not used but preserved)
+  const determineSmartStatusLegacy = (shiftData) => {
+    // Refined status logic:
+    // - Future date: DRAFT
+    // - Today: use segment/time logic (ACTIVE/COMPLETED)
+    // - Past: use segment/time logic (COMPLETED/ACTIVE if segments incomplete)
+    // Always use shiftData.shiftDate for date comparison
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    let shiftDate;
+    if (shiftData && shiftData.shiftDate) {
+      shiftDate = new Date(shiftData.shiftDate);
+      if (isNaN(shiftDate)) {
+        shiftDate = new Date(Date.parse(shiftData.shiftDate));
+      }
+    } else {
+      shiftDate = new Date();
+    }
+    shiftDate.setHours(0, 0, 0, 0);
+    if (shiftDate > today) {
+      return 'DRAFT';
+    }
+    // For today and past, use segment/time logic below
+
     console.log('🧮 Employee Dashboard - Calculating smart status:', shiftData);
     
     if (!shiftData || !shiftData.segments) {
@@ -129,74 +256,82 @@ const ShiftEntry = ({ refreshTrigger }) => {
     setMessage('Loading shift data from Google Sheets...');
     
     try {
-      const response = await getCurrentShift({
+      // Capture the date at the start of the function to avoid race conditions
+      const dateAtFetch = selectedDate instanceof Date && !isNaN(selectedDate)
+        ? new Date(selectedDate)
+        : new Date();
+      // Always fetch, recalculate, update sheet if needed, then fetch again
+      let response = await getCurrentShiftWithCrossMidnight({
         employeeId: user.id,
-        date: getCurrentDate(),
+        date: dateAtFetch.toISOString().split('T')[0],
         forceRefresh: true
       });
-      
+
       if (response.success && response.data) {
         console.log('📊 RECEIVED SHEET DATA:', JSON.stringify(response.data, null, 2));
-        
+
         const sheetStatus = response.data.status;
         const calculatedStatus = determineSmartStatus(response.data);
-        
+
         console.log(`STATUS COMPARISON: Sheet="${sheetStatus}" vs Calculated="${calculatedStatus}"`);
-        
-        // If statuses differ, update sheet first, then fetch fresh data
-        if (sheetStatus !== calculatedStatus) {
-          console.log(`UPDATING SHEET: ${sheetStatus} → ${calculatedStatus}`);
-          
+
+        // Use enhanced status correction detection
+        const correction = detectStatusCorrection(response.data);
+        if (correction.needsCorrection) {
+          console.log(`🔄 UPDATING SHEET: ${correction.originalStatus} → ${correction.correctedStatus}`);
           try {
-            const syncResult = await syncStatusToSheet(
-              response.data.shiftId,
-              calculatedStatus,
-              `Smart status update: ${sheetStatus} → ${calculatedStatus}`
-            );
+            // Try the robust fixShiftStatus first
+            const fixResult = await fixShiftStatus({
+              shiftId: response.data.shiftId,
+              correctStatus: correction.correctedStatus
+            });
             
-            if (syncResult.success) {
-              console.log('✅ Sheet updated successfully');
-              
-              // Fetch fresh data from updated sheet
-              const freshResponse = await getCurrentShift({
-                employeeId: user.id,
-                date: getCurrentDate(),
-                forceRefresh: true
-              });
-              
-              if (freshResponse.success && freshResponse.data) {
-                console.log('� Fresh sheet data received');
-                setCurrentShift(freshResponse.data);
-                setMessage(`✅ Status updated to ${calculatedStatus} - showing fresh sheet data`);
-              } else {
-                setCurrentShift(response.data);
-                setMessage(`⚠️ Sheet updated but refresh failed - showing original data`);
-              }
+            if (fixResult.success) {
+              console.log('✅ Sheet updated successfully with fixShiftStatus');
             } else {
-              setCurrentShift(response.data);
-              setMessage(`⚠️ Failed to update sheet: ${syncResult.message}`);
+              console.warn('⚠️ fixShiftStatus failed, using fallback');
+              // Fallback to original method
+              const syncResult = await syncStatusToSheet(
+                response.data.shiftId,
+                correction.correctedStatus,
+                `Smart status update: ${correction.originalStatus} → ${correction.correctedStatus}`
+              );
+              if (syncResult.success) {
+                console.log('✅ Sheet updated successfully with fallback');
+              } else {
+                setMessage(`⚠️ Failed to update sheet: ${syncResult.message}`);
+              }
             }
           } catch (error) {
             console.error('❌ Status update error:', error);
-            setCurrentShift(response.data);
             setMessage(`❌ Error updating status: ${error.message}`);
           }
-        } else {
-          // Statuses match - display sheet data as-is
-          console.log('✅ Statuses match - displaying sheet data');
-          setCurrentShift(response.data);
-          setMessage(`📊 Current status: ${sheetStatus} (verified)`);
+          // Always fetch fresh data after update attempt
+          response = await getCurrentShiftWithCrossMidnight({
+            employeeId: user.id,
+            date: dateAtFetch.toISOString().split('T')[0],
+            forceRefresh: true
+          });
         }
+        // Display latest data
+        setCurrentShift(response.data);
+        setMessage(`📊 Current status: ${response.data.status} (verified)`);
       } else {
         setCurrentShift(null);
-        setMessage('No shift found for today.');
+        // Always use the selectedDate for the message
+        let dateStr = 'today';
+        if (selectedDate instanceof Date && !isNaN(selectedDate)) {
+          // Format as MM/DD/YYYY for clarity
+          dateStr = selectedDate.toLocaleDateString('en-US');
+        }
+        setMessage(`No shift found for ${dateStr}.`);
       }
     } catch (error) {
       setMessage('Error: ' + handleAPIError(error));
     } finally {
       setLoading(false);
     }
-  }, [user]);
+  }, [user, selectedDate]);
 
   useEffect(() => {
     if (user) {
@@ -214,15 +349,55 @@ const ShiftEntry = ({ refreshTrigger }) => {
 
   // Refresh data when tab becomes visible/active
   useEffect(() => {
-    const handleVisibilityChange = () => {
+    const handleVisibilityChange = async () => {
       if (!document.hidden && user) {
-        console.log('🔄 Tab became visible - refreshing shift data');
+        console.log('🔄 Tab became visible - refreshing shift data and correcting future shifts');
+        try {
+          const allShiftsResp = await (await import('../../services/appScriptAPI')).getShifts({
+            employeeId: user.id,
+            forceRefresh: true
+          });
+          if (allShiftsResp.success && Array.isArray(allShiftsResp.data)) {
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            for (const shift of allShiftsResp.data) {
+              // Use shift.shiftDate for consistency
+              const shiftDateStr = shift.shiftDate || shift.date;
+              if (shiftDateStr) {
+                let shiftDate = new Date(shiftDateStr);
+                shiftDate.setHours(0, 0, 0, 0);
+                // Use enhanced status correction detection
+                const correction = detectStatusCorrection(shift);
+                if (correction.needsCorrection) {
+                  console.log(`🛠️ Smart correction on tab switch: ${shift.shiftId} (${shiftDateStr}) ${correction.originalStatus} → ${correction.correctedStatus}`);
+                  try {
+                    const fixResult = await fixShiftStatus({
+                      shiftId: shift.shiftId,
+                      correctStatus: correction.correctedStatus
+                    });
+                    if (!fixResult.success) {
+                      // Fallback to original method
+                      await syncStatusToSheet(shift.shiftId, correction.correctedStatus, 'Auto-corrected on tab switch');
+                    }
+                  } catch (error) {
+                    console.error('❌ Tab switch correction error:', error);
+                  }
+                } else {
+                  console.log(`✅ Shift ${shift.shiftId} (${shiftDateStr}) status correct, no correction needed.`);
+                }
+              }
+            }
+          }
+        } catch (err) {
+          console.error('Error correcting future shift statuses:', err);
+        }
+        // Refresh current shift data only once after corrections
         loadCurrentShiftStatus();
       }
     };
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
-    
+
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
@@ -261,7 +436,7 @@ const ShiftEntry = ({ refreshTrigger }) => {
         employeeName: user.name,
         employeeId: user.id,
         shiftType: 'Regular',
-        date: getCurrentDate(),
+        date: selectedDate ? selectedDate.toISOString().split('T')[0] : getCurrentDate(),
         ...scheduleInfo
       };
       
@@ -309,7 +484,8 @@ const ShiftEntry = ({ refreshTrigger }) => {
         action: 'completeShift',
         shiftId: currentShift.shiftId,
         employeeId: user.id,
-        completedAt: new Date().toISOString()
+        completedAt: new Date().toISOString(),
+        date: selectedDate ? selectedDate.toISOString().split('T')[0] : getCurrentDate()
       });
 
       if (response.success) {
@@ -351,6 +527,8 @@ const ShiftEntry = ({ refreshTrigger }) => {
     if (!currentShift) return null;
 
     const { segments = [], status } = currentShift;
+    // Always use the frontend-calculated status for display
+    const displayStatus = determineSmartStatus(currentShift);
 
     return (
       <Card sx={{ mb: 2 }}>
@@ -358,17 +536,38 @@ const ShiftEntry = ({ refreshTrigger }) => {
           <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
             <Typography variant="h6">Current Shift (Pure Sheet Data)</Typography>
             <Box display="flex" alignItems="center" gap={1}>
-              {renderStatusChip(status)}
+              {renderStatusChip(displayStatus)}
             </Box>
           </Box>
           
           <Box mb={2}>
             <Typography variant="body2" color="text.secondary">
               Shift ID: {currentShift.shiftId} | Date: {currentShift.date}
+              {currentShift.day && (
+                <Chip 
+                  label={currentShift.day} 
+                  size="small" 
+                  color="secondary" 
+                  sx={{ ml: 1 }} 
+                />
+              )}
+              {currentShift._isCrossMidnight && (
+                <Chip 
+                  label="Cross-Midnight Shift" 
+                  size="small" 
+                  color="info" 
+                  sx={{ ml: 1 }} 
+                />
+              )}
             </Typography>
             <Typography variant="body2" color="text.secondary">
               Total Duration: {currentShift.totalDuration || 'N/A'} | Last End: {currentShift.lastEndTime || 'N/A'}
             </Typography>
+            {currentShift._crossMidnightNote && (
+              <Typography variant="body2" color="info.main" sx={{ fontStyle: 'italic', mt: 1 }}>
+                ℹ️ {currentShift._crossMidnightNote}
+              </Typography>
+            )}
           </Box>
           
           {segments.length > 0 && (
@@ -401,6 +600,16 @@ const ShiftEntry = ({ refreshTrigger }) => {
       <Typography variant="h4" gutterBottom>
         Shift Entry
       </Typography>
+
+      <LocalizationProvider dateAdapter={AdapterDateFns}>
+        <DatePicker
+          label="Select Shift Date"
+          value={selectedDate}
+          onChange={(newDate) => setSelectedDate(newDate)}
+          disablePast={false}
+          renderInput={(params) => <TextField {...params} sx={{ mb: 2 }} />}
+        />
+      </LocalizationProvider>
 
       {message && (
         <Alert 

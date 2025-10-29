@@ -7,7 +7,41 @@ import {
 
 // Replace with your actual Google Apps Script Web App URL
 // Replace with your NEW Google Apps Script Web App URL after redeployment
-const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzzZKrUI_16eXDGWpeowP3PArAw6d7GepVl6Pht3SA5pZv__QzV7v3lMACSXlwavNsbYA/exec';
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzv8A9EVwWH3suTCa5vyXEHPw0HrhDKgr-KFHDIbHeLdeRq0_vm5e6SomgqWk1b-ZHMKg/exec';
+
+// Test function to check if data exists in sheets with very broad date range
+export const testDataExists = async () => {
+  console.log('🔍 Testing if data exists in Google Sheets...');
+  
+  try {
+    const response = await makeAPICall({
+      action: 'getAllShiftsForAdmin',
+      startDate: '2020-01-01',  // Very early date
+      endDate: '2030-12-31'     // Very late date
+    });
+    
+    console.log('📊 Test Results:');
+    console.log('Success:', response.success);
+    console.log('Data count:', response.data?.length || 0);
+    console.log('Message:', response.message);
+    
+    if (response.data && response.data.length > 0) {
+      console.log('✅ Data found! First record:');
+      console.log(response.data[0]);
+      console.log('📅 Available shift dates:');
+      response.data.forEach((shift, index) => {
+        console.log(`  ${index + 1}. ${shift['Shift Date']} - ${shift['Employee Name']}`);
+      });
+    } else {
+      console.log('❌ No data found in sheets');
+    }
+    
+    return response;
+  } catch (error) {
+    console.error('❌ Error testing data:', error);
+    return { success: false, error: error.message };
+  }
+};
 
 // 🚨 CRITICAL: This URL must point to the LATEST deployment with real AI analysis!
 // If you're getting generic responses, you need to:
@@ -371,28 +405,28 @@ export const getCurrentShift = async (filters) => {
       
       // Apply smart status correction only if needed
       const sheetStatus = freshResult.data.status;
-      const smartStatus = applyFrontendSmartStatus(freshResult.data);
+      const smartStatusResult = applyFrontendSmartStatus(freshResult.data);
       
-      if (sheetStatus !== smartStatus) {
-        console.log(`🔄 STATUS CORRECTION NEEDED: "${sheetStatus}" → "${smartStatus}"`);
+      if (smartStatusResult._statusCorrected) {
+        console.log(`🔄 STATUS CORRECTION NEEDED: "${sheetStatus}" → "${smartStatusResult.status}"`);
         
         // Update the sheet with correct status
         try {
           await syncStatusToSheet(
             freshResult.data.shiftId,
-            smartStatus,
+            smartStatusResult.status,
             `Smart status correction after fresh data fetch`
           );
           
           // Update the data to reflect corrected status
-          freshResult.data.status = smartStatus;
+          freshResult.data.status = smartStatusResult.status;
           freshResult.data._statusCorrected = true;
           freshResult.data._freshFromSheet = true;
           
           console.log('✅ STATUS CORRECTED AND SYNCED TO SHEET');
         } catch (error) {
           console.error('❌ Failed to sync corrected status to sheet:', error);
-          freshResult.data.status = smartStatus;
+          freshResult.data.status = smartStatusResult.status;
           freshResult.data._statusCorrected = true;
           freshResult.data._syncFailed = true;
         }
@@ -418,36 +452,36 @@ export const getCurrentShift = async (filters) => {
   // 🔥 ENHANCED FRONTEND SMART STATUS WITH IMMEDIATE SHEET SYNC
   if (result.success && result.data && result.data.segments) {
     const backendStatus = result.data.status;
-    const frontendSmartStatus = applyFrontendSmartStatus(result.data);
+    const smartStatusResult = applyFrontendSmartStatus(result.data);
     
     // 🔧 ALWAYS sync status if different (immediate sheet update)
-    const shouldSync = (backendStatus !== frontendSmartStatus);
+    const shouldSync = smartStatusResult._statusCorrected;
     
     if (shouldSync) {
-      console.log(`🔄 STATUS MISMATCH DETECTED: Backend="${backendStatus}" → Smart="${frontendSmartStatus}"`);
+      console.log(`🔄 STATUS MISMATCH DETECTED: Backend="${backendStatus}" → Smart="${smartStatusResult.status}"`);
       console.log(`🚀 TRIGGERING IMMEDIATE SHEET SYNC...`);
       
       // 🚨 IMMEDIATE SHEET SYNC - Update status in Google Sheets right now
       try {
         const syncResult = await syncStatusToSheet(
           result.data.shiftId, 
-          frontendSmartStatus, 
-          `Smart status correction: ${backendStatus} → ${frontendSmartStatus}`
+          smartStatusResult.status, 
+          `Smart status correction: ${backendStatus} → ${smartStatusResult.status}`
         );
         
         if (syncResult.success) {
           console.log('✅ SHEET STATUS SYNC COMPLETED');
-          result.data.status = frontendSmartStatus;
+          result.data.status = smartStatusResult.status;
           result.data._statusSynced = true;
           result.data._syncedAt = new Date().toISOString();
         } else {
           console.warn('⚠️ SHEET STATUS SYNC FAILED, using frontend correction only');
-          result.data.status = frontendSmartStatus;
+          result.data.status = smartStatusResult.status;
           result.data._statusCorrected = true;
         }
       } catch (syncError) {
         console.error('❌ SHEET SYNC ERROR:', syncError);
-        result.data.status = frontendSmartStatus;
+        result.data.status = smartStatusResult.status;
         result.data._statusCorrected = true;
       }
       
@@ -458,7 +492,7 @@ export const getCurrentShift = async (filters) => {
         try {
           const completeSync = await syncCompleteShiftToSheet(
             result.data,
-            `Complete sync with smart status: ${frontendSmartStatus}`
+            `Complete sync with smart status: ${smartStatusResult.status}`
           );
           
           if (completeSync.success) {
@@ -478,8 +512,48 @@ export const getCurrentShift = async (filters) => {
 };
 
 // 🔥 ENHANCED FRONTEND SMART STATUS LOGIC (backup for backend)
-const applyFrontendSmartStatus = (shiftData) => {
-  if (!shiftData || !shiftData.segments) return 'DRAFT';
+export const applyFrontendSmartStatus = (shiftData) => {
+  const originalStatus = shiftData?.status;
+  
+  if (!shiftData || !shiftData.segments) {
+    const correctedStatus = 'DRAFT';
+    return {
+      status: correctedStatus,
+      _statusCorrected: originalStatus !== correctedStatus,
+      _correctionReason: originalStatus !== correctedStatus ? 'No segments data - should be DRAFT' : null,
+      _originalBackendStatus: originalStatus
+    };
+  }
+  
+  // 🚨 CRITICAL FIX: Check if shift date is in the future
+  if (shiftData.shiftDate) {
+    const today = new Date().toISOString().split('T')[0]; // Get today's date in YYYY-MM-DD format
+    const shiftDate = shiftData.shiftDate;
+    
+    console.log(`📅 DATE COMPARISON DEBUG: shiftDate="${shiftDate}" vs today="${today}"`);
+    
+    // Convert DD/MM/YYYY to YYYY-MM-DD for proper comparison if needed
+    let normalizedShiftDate = shiftDate;
+    if (shiftDate.includes('/')) {
+      // Assuming DD/MM/YYYY format, convert to YYYY-MM-DD
+      const [day, month, year] = shiftDate.split('/');
+      normalizedShiftDate = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+      console.log(`📅 CONVERTED: "${shiftDate}" → "${normalizedShiftDate}"`);
+    }
+    
+    if (normalizedShiftDate > today) {
+      console.log(`🚨 FUTURE DATE DETECTED: ${normalizedShiftDate} > ${today} - Forcing DRAFT status`);
+      const correctedStatus = 'DRAFT';
+      return {
+        status: correctedStatus,
+        _statusCorrected: originalStatus !== correctedStatus,
+        _correctionReason: originalStatus !== correctedStatus ? 'Future date - should be DRAFT' : null,
+        _originalBackendStatus: originalStatus
+      };
+    }
+    
+    console.log(`✅ DATE CHECK PASSED: ${normalizedShiftDate} <= ${today} - Continuing with time-based logic`);
+  }
   
   const segments = shiftData.segments;
   const now = new Date();
@@ -489,6 +563,33 @@ const applyFrontendSmartStatus = (shiftData) => {
     minute: '2-digit' 
   });
   
+  // 🚨 CRITICAL: Check if shift is from a past date
+  if (shiftData.shiftDate) {
+    const today = new Date().toISOString().split('T')[0];
+    let normalizedShiftDate = shiftData.shiftDate;
+    if (shiftData.shiftDate.includes('/')) {
+      const [day, month, year] = shiftData.shiftDate.split('/');
+      normalizedShiftDate = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+    }
+    
+    if (normalizedShiftDate < today) {
+      console.log(`📅 PAST DATE DETECTED: ${normalizedShiftDate} < ${today} - Checking if shift should be COMPLETED`);
+      
+      // For past dates, if there are completed segments, mark as COMPLETED
+      const completedSegments = segments.filter(seg => seg.endTime);
+      if (completedSegments.length > 0) {
+        console.log(`🏁 PAST DATE WITH COMPLETED SEGMENTS → COMPLETED`);
+        const correctedStatus = 'COMPLETED';
+        return {
+          status: correctedStatus,
+          _statusCorrected: originalStatus !== correctedStatus,
+          _correctionReason: originalStatus !== correctedStatus ? 'Past date with completed segments - should be COMPLETED' : null,
+          _originalBackendStatus: originalStatus
+        };
+      }
+    }
+  }
+  
   console.log(`🔍 SMART STATUS: Current time: ${currentTime}, Stored status: "${shiftData.status}", Segments: ${segments.length}`);
   
   // 🚨 CRITICAL FIX: Check for impossible "COMPLETED" before shift starts
@@ -497,7 +598,13 @@ const applyFrontendSmartStatus = (shiftData) => {
     if (firstStartTime && isCurrentTimeBeforeShiftStart(currentTime, firstStartTime)) {
       console.log(`🚨 IMPOSSIBLE STATUS DETECTED: Shift marked COMPLETED at ${currentTime} but starts at ${firstStartTime}`);
       console.log('🔧 CORRECTING TO: OFFLINE');
-      return 'OFFLINE';
+      const correctedStatus = 'OFFLINE';
+      return {
+        status: correctedStatus,
+        _statusCorrected: true,
+        _correctionReason: 'Impossible status: COMPLETED before shift starts',
+        _originalBackendStatus: originalStatus
+      };
     }
   }
   
@@ -506,7 +613,13 @@ const applyFrontendSmartStatus = (shiftData) => {
     const firstStartTime = segments[0]?.startTime;
     if (firstStartTime && isCurrentTimeBeforeShiftStart(currentTime, firstStartTime)) {
       console.log(`⏰ BEFORE SHIFT START: Current ${currentTime} < Start ${firstStartTime} → OFFLINE`);
-      return 'OFFLINE';
+      const correctedStatus = 'OFFLINE';
+      return {
+        status: correctedStatus,
+        _statusCorrected: originalStatus !== correctedStatus,
+        _correctionReason: originalStatus !== correctedStatus ? 'Current time before shift start - should be OFFLINE' : null,
+        _originalBackendStatus: originalStatus
+      };
     }
   }
   
@@ -514,7 +627,12 @@ const applyFrontendSmartStatus = (shiftData) => {
   
   if (hasActiveSegment) {
     console.log('✅ HAS ACTIVE SEGMENT → ACTIVE');
-    return 'ACTIVE';
+    return {
+      status: 'ACTIVE',
+      _statusCorrected: false,
+      _correctionReason: null,
+      _originalBackendStatus: originalStatus
+    };
   }
   
   const completedSegments = segments.filter(seg => seg.endTime);
@@ -524,28 +642,58 @@ const applyFrontendSmartStatus = (shiftData) => {
       // 🔥 ENHANCED: Check if current time is after end time (same day or next day)
       if (isCurrentTimeAfterShiftEndEnhanced(currentTime, lastEndTime)) {
         console.log(`🏁 SHIFT COMPLETED: Current ${currentTime} > End ${lastEndTime} → COMPLETED`);
-        return 'COMPLETED';
+        const correctedStatus = 'COMPLETED';
+        return {
+          status: correctedStatus,
+          _statusCorrected: originalStatus !== correctedStatus,
+          _correctionReason: originalStatus !== correctedStatus ? 'Current time after shift end - should be COMPLETED' : null,
+          _originalBackendStatus: originalStatus
+        };
       }
       
       // Check for gaps between segments (more intelligent break detection)
       const gapDetected = checkForGapsBetweenSegments(segments, currentTime);
       if (gapDetected) {
         console.log(`⏸️ GAP BETWEEN SEGMENTS → ACTIVE (waiting for more work)`);
-        return 'ACTIVE';
+        const correctedStatus = 'ACTIVE';
+        return {
+          status: correctedStatus,
+          _statusCorrected: originalStatus !== correctedStatus,
+          _correctionReason: originalStatus !== correctedStatus ? 'Gap between segments detected - should be ACTIVE' : null,
+          _originalBackendStatus: originalStatus
+        };
       }
       
       console.log(`⏸️ COMPLETED SEGMENTS, NO ACTIVE → ACTIVE (waiting for completion)`);
-      return 'ACTIVE';
+      const correctedStatus = 'ACTIVE';
+      return {
+        status: correctedStatus,
+        _statusCorrected: originalStatus !== correctedStatus,
+        _correctionReason: originalStatus !== correctedStatus ? 'Has completed segments - should be ACTIVE' : null,
+        _originalBackendStatus: originalStatus
+      };
     }
   }
   
   if (segments.length === 0) {
     console.log('📝 NO SEGMENTS → DRAFT');
-    return 'DRAFT';
+    const correctedStatus = 'DRAFT';
+    return {
+      status: correctedStatus,
+      _statusCorrected: originalStatus !== correctedStatus,
+      _correctionReason: originalStatus !== correctedStatus ? 'No segments - should be DRAFT' : null,
+      _originalBackendStatus: originalStatus
+    };
   }
   
   console.log('📝 DEFAULT FALLBACK → DRAFT');
-  return 'DRAFT';
+  const correctedStatus = 'DRAFT';
+  return {
+    status: correctedStatus,
+    _statusCorrected: originalStatus !== correctedStatus,
+    _correctionReason: originalStatus !== correctedStatus ? 'Default fallback - should be DRAFT' : null,
+    _originalBackendStatus: originalStatus
+  };
 };
 
 // Enhanced gap detection between segments
@@ -697,17 +845,29 @@ export const getShifts = async (filters = {}) => {
       if (freshResult.data) {
         const shifts = Array.isArray(freshResult.data) ? freshResult.data : [freshResult.data];
         
+        // First collect shifts needing correction
+        const shiftsNeedingCorrection = [];
+        
         const correctedShifts = shifts.map(shift => {
           if (!shift || !shift.segments) return shift;
           
           const backendStatus = shift.status;
-          const frontendSmartStatus = applyFrontendSmartStatus(shift);
+          const smartStatusResult = applyFrontendSmartStatus(shift);
           
-          if (backendStatus !== frontendSmartStatus) {
-            console.log(`🔄 HISTORY STATUS CORRECTION: Shift ${shift.shiftId}: "${backendStatus}" → "${frontendSmartStatus}"`);
+          if (smartStatusResult._statusCorrected) {
+            console.log(`🔄 HISTORY STATUS CORRECTION: Shift ${shift.shiftId}: "${backendStatus}" → "${smartStatusResult.status}"`);
+            
+            // Add to correction list
+            shiftsNeedingCorrection.push({
+              shiftId: shift.shiftId,
+              originalStatus: backendStatus,
+              correctedStatus: smartStatusResult.status,
+              reason: smartStatusResult._correctionReason
+            });
+            
             return {
               ...shift,
-              status: frontendSmartStatus,
+              status: smartStatusResult.status,
               _statusCorrected: true,
               _originalBackendStatus: backendStatus,
               _freshFromSheet: true
@@ -716,6 +876,30 @@ export const getShifts = async (filters = {}) => {
           
           return { ...shift, _freshFromSheet: true };
         });
+        
+        // Apply corrections to Google Sheets immediately
+        if (shiftsNeedingCorrection.length > 0) {
+          console.log(`🚨 FOUND ${shiftsNeedingCorrection.length} SHIFTS NEEDING CORRECTION - FIXING IN SHEETS...`);
+          
+          // Fix all shifts in parallel (don't wait for completion)
+          Promise.all(shiftsNeedingCorrection.map(async (correction) => {
+            try {
+              console.log(`📤 FIXING SHIFT ${correction.shiftId}: ${correction.originalStatus} → ${correction.correctedStatus}`);
+              const fixResult = await fixShiftStatus({
+                shiftId: correction.shiftId,
+                correctStatus: correction.correctedStatus
+              });
+              
+              if (fixResult.success) {
+                console.log(`✅ FIXED SHIFT ${correction.shiftId} in Google Sheets successfully`);
+              } else {
+                console.error(`❌ FAILED to fix shift ${correction.shiftId}:`, fixResult.message);
+              }
+            } catch (error) {
+              console.error(`❌ ERROR fixing shift ${correction.shiftId}:`, error);
+            }
+          })).catch(err => console.error('❌ Error in batch status corrections:', err));
+        }
         
         freshResult.data = Array.isArray(freshResult.data) ? correctedShifts : correctedShifts[0];
       }
@@ -743,21 +927,16 @@ export const getShifts = async (filters = {}) => {
       if (!shift || !shift.segments) return shift;
       
       const backendStatus = shift.status;
-      const frontendSmartStatus = applyFrontendSmartStatus(shift);
+      const smartStatusResult = applyFrontendSmartStatus(shift);
       
       // Apply smart status correction (same logic as getCurrentShift)
-      const shouldOverride = (
-        (backendStatus === 'COMPLETED' && frontendSmartStatus === 'OFFLINE') ||
-        (backendStatus !== 'OFFLINE' && frontendSmartStatus === 'OFFLINE') ||
-        (backendStatus === 'ACTIVE' && frontendSmartStatus === 'COMPLETED') ||
-        (backendStatus !== frontendSmartStatus) // Apply all corrections for history
-      );
+      const shouldOverride = smartStatusResult._statusCorrected;
       
       if (shouldOverride) {
-        console.log(`🔄 HISTORY STATUS CORRECTION: Shift ${shift.shiftId}: "${backendStatus}" → "${frontendSmartStatus}"`);
+        console.log(`🔄 HISTORY STATUS CORRECTION: Shift ${shift.shiftId}: "${backendStatus}" → "${smartStatusResult.status}"`);
         return {
           ...shift,
-          status: frontendSmartStatus,
+          status: smartStatusResult.status,
           _statusCorrected: true,
           _originalBackendStatus: backendStatus
         };
@@ -865,7 +1044,8 @@ export const submitTimeSegments = async (payload) => {
     };
     
     // Use the same smart status logic
-    smartStatus = applyFrontendSmartStatus(mockShiftData);
+    const smartStatusResult = applyFrontendSmartStatus(mockShiftData);
+    smartStatus = smartStatusResult.status;
     console.log(`🧠 Smart status calculated: ${smartStatus}`);
   }
 
@@ -1337,7 +1517,8 @@ export const testImpossibleStatusScenarios = async (employeeId, employeeName) =>
       ]
     };
     
-    const smartStatus = applyFrontendSmartStatus(mockShiftData);
+    const smartStatusResult = applyFrontendSmartStatus(mockShiftData);
+    const smartStatus = smartStatusResult.status;
     const now = new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' });
     
     if (isCurrentTimeBeforeShiftStart(now, '09:00') && smartStatus !== 'OFFLINE') {
@@ -1429,7 +1610,7 @@ window.debugShiftEntryData = async function() {
     
     // Step 2: Force fresh data from sheet
     console.log('\n📊 === FETCHING FRESH SHEET DATA ===');
-    const freshSheetResponse = await fetch('https://script.google.com/macros/s/AKfycbwFa0gyutOkaVzlz1HNsJEqFJSua39Fw-sXZMlaCTbEnUID1ZiqQSxk-P1j8ET7xy5xXQ/exec', {
+    const freshSheetResponse = await fetch(APPS_SCRIPT_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain' },
       body: JSON.stringify({
@@ -1498,7 +1679,7 @@ window.debugShiftEntryData = async function() {
       
       // Step 6: Test regular getCurrentShift API
       console.log('\n🔄 === TESTING REGULAR API ===');
-      const regularResponse = await fetch('https://script.google.com/macros/s/AKfycbwFa0gyutOkaVzlz1HNsJEqFJSua39Fw-sXZMlaCTbEnUID1ZiqQSxk-P1j8ET7xy5xXQ/exec', {
+      const regularResponse = await fetch(APPS_SCRIPT_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain' },
         body: JSON.stringify({
@@ -1567,7 +1748,7 @@ window.debugCurrentShiftData = async function() {
       return;
     }
     
-    const response = await fetch('https://script.google.com/macros/s/AKfycbwFa0gyutOkaVzlz1HNsJEqFJSua39Fw-sXZMlaCTbEnUID1ZiqQSxk-P1j8ET7xy5xXQ/exec', {
+    const response = await fetch(APPS_SCRIPT_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain' },
       body: JSON.stringify({
@@ -1616,10 +1797,45 @@ window.reloadShiftEntryData = function() {
   console.log('✅ Refresh triggered - check for updated data');
 };
 
-console.log('🔧 DEBUG FUNCTIONS LOADED:');
+// Test if data exists in Google Sheets with broad date range
+window.testDataExists = async function() {
+  console.log('🔍 Testing if data exists in Google Sheets...');
+  
+  try {
+    const response = await makeAPICall({
+      action: 'getAllShiftsForAdmin',
+      startDate: '2020-01-01',  // Very early date
+      endDate: '2030-12-31'     // Very late date
+    });
+    
+    console.log('� Test Results:');
+    console.log('Success:', response.success);
+    console.log('Data count:', response.data?.length || 0);
+    console.log('Message:', response.message);
+    
+    if (response.data && response.data.length > 0) {
+      console.log('✅ Data found! First record:');
+      console.log(response.data[0]);
+      console.log('📅 Available shift dates:');
+      response.data.forEach((shift, index) => {
+        console.log(`  ${index + 1}. ${shift['Shift Date']} - ${shift['Employee Name']}`);
+      });
+    } else {
+      console.log('❌ No data found in sheets');
+    }
+    
+    return response;
+  } catch (error) {
+    console.error('❌ Error testing data:', error);
+    return { success: false, error: error.message };
+  }
+};
+
+console.log('�🔧 DEBUG FUNCTIONS LOADED:');
 console.log('   debugShiftEntryData() - Full debug session');
 console.log('   debugCurrentShiftData() - Quick data check');
 console.log('   reloadShiftEntryData() - Force reload');
+console.log('   testDataExists() - Test if shift data exists in Google Sheets');
 
 // =============================================================
 //                 END DEBUG FUNCTIONS
@@ -1695,7 +1911,8 @@ export const monitorAndFixStatus = async (shiftData) => {
   if (!shiftData || !shiftData.segments || shiftData.segments.length === 0) return shiftData;
   
   const currentStatus = shiftData.status;
-  const correctStatus = applyFrontendSmartStatus(shiftData);
+  const smartStatusResult = applyFrontendSmartStatus(shiftData);
+  const correctStatus = smartStatusResult.status;
   
   // If status is wrong, try to fix it in the backend automatically
   if (currentStatus !== correctStatus && currentStatus === 'COMPLETED') {
@@ -2145,6 +2362,45 @@ export const testTimezoneConversion = async () => {
   });
 };
 
+// =============================================================
+//                 DAY COLUMN FUNCTIONS
+// =============================================================
+
+// Test Day column integration
+export const testDayColumnIntegration = async () => {
+  return await makeAPICall({
+    action: 'testDayColumnIntegration'
+  });
+};
+
+// Get day name from date (utility function)
+export const getDayNameFromDate = (dateString) => {
+  try {
+    let date;
+    if (dateString.includes('/')) {
+      // DD/MM/YYYY format
+      const [day, month, year] = dateString.split('/');
+      date = new Date(year, month - 1, day);
+    } else {
+      // YYYY-MM-DD format
+      date = new Date(dateString + 'T00:00:00');
+    }
+    
+    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    return days[date.getDay()];
+  } catch (error) {
+    console.error('Error getting day name:', error);
+    return '';
+  }
+};
+
+// Optional: Backfill Day column for existing entries
+export const backfillDayColumn = async () => {
+  return await makeAPICall({
+    action: 'backfillDayColumn'
+  });
+};
+
 // =============================================
 // ADMIN SYSTEM FUNCTIONS
 // =============================================
@@ -2324,3 +2580,158 @@ export const getAIInsightsDashboard = async () => {
   const insights = getAIDashboardFromReact(dataResult.data);
   return { success: true, insights };
 };
+
+// ========================================
+// 🌙 CROSS-MIDNIGHT SHIFT DETECTION UTILITIES
+// ========================================
+
+/**
+ * Detects if there's an active cross-midnight shift from previous day
+ * Safe frontend-only approach that doesn't modify backend behavior
+ */
+export const detectCrossMidnightShift = async (employeeId, currentDate) => {
+  try {
+    console.log(`🌙 Checking for cross-midnight shift on ${currentDate}`);
+    
+    // Calculate previous day
+    const current = new Date(currentDate + 'T00:00:00');
+    const previousDay = new Date(current);
+    previousDay.setDate(previousDay.getDate() - 1);
+    const previousDayStr = previousDay.toISOString().split('T')[0];
+    
+    console.log(`🌙 Looking for shifts from ${previousDayStr} that might extend to ${currentDate}`);
+    
+    // Get previous day's shifts
+    const previousShifts = await getShifts({
+      employeeId: employeeId,
+      startDate: previousDayStr,
+      endDate: previousDayStr
+    });
+    
+    if (!previousShifts.success || !previousShifts.data || previousShifts.data.length === 0) {
+      console.log(`🌙 No shifts found for ${previousDayStr}`);
+      return { found: false, shift: null };
+    }
+    
+    // Check each shift from previous day for cross-midnight potential
+    for (const shift of previousShifts.data) {
+      if (shift.status === 'ACTIVE' || shift.status === 'COMPLETED') {
+        console.log(`🌙 Checking shift ${shift.shiftId} (${shift.status}) for cross-midnight extension`);
+        
+        if (isCrossMidnightShift(shift)) {
+          console.log(`✅ Cross-midnight shift detected: ${shift.shiftId} from ${previousDayStr} extends to ${currentDate}`);
+          
+          // Mark this as a cross-midnight shift for display purposes
+          const crossMidnightShift = {
+            ...shift,
+            _isCrossMidnight: true,
+            _originalDate: shift.shiftDate,
+            _displayDate: currentDate,
+            _crossMidnightNote: `Shift started ${previousDayStr}, extends to ${currentDate}`
+          };
+          
+          return { found: true, shift: crossMidnightShift };
+        }
+      }
+    }
+    
+    console.log(`🌙 No cross-midnight shifts found extending from ${previousDayStr} to ${currentDate}`);
+    return { found: false, shift: null };
+    
+  } catch (error) {
+    console.error('❌ Error detecting cross-midnight shift:', error);
+    return { found: false, shift: null, error: error.message };
+  }
+};
+
+/**
+ * Determines if a shift is a cross-midnight shift based on segments
+ */
+export const isCrossMidnightShift = (shift) => {
+  if (!shift || !shift.segments || shift.segments.length === 0) {
+    return false;
+  }
+  
+  // Check for active segments (ongoing shift)
+  const hasActiveSegment = shift.segments.some(seg => !seg.endTime);
+  if (hasActiveSegment) {
+    console.log(`🌙 Shift ${shift.shiftId} has active segments - potential cross-midnight`);
+    return true;
+  }
+  
+  // Check if any completed segment spans midnight
+  for (const segment of shift.segments) {
+    if (segment.startTime && segment.endTime) {
+      if (isCrossMidnightTimeRange(segment.startTime, segment.endTime)) {
+        console.log(`🌙 Segment ${segment.startTime}-${segment.endTime} spans midnight`);
+        return true;
+      }
+    }
+  }
+  
+  return false;
+};
+
+/**
+ * Checks if a time range (HH:MM format) spans midnight
+ */
+export const isCrossMidnightTimeRange = (startTime, endTime) => {
+  try {
+    const [startHours, startMinutes] = startTime.split(':').map(Number);
+    const [endHours, endMinutes] = endTime.split(':').map(Number);
+    
+    const startMinutesTotal = startHours * 60 + startMinutes;
+    const endMinutesTotal = endHours * 60 + endMinutes;
+    
+    // If end time is earlier in the day than start time, it's cross-midnight
+    return endMinutesTotal < startMinutesTotal;
+  } catch (error) {
+    console.error('Error checking cross-midnight time range:', error);
+    return false;
+  }
+};
+
+/**
+ * Enhanced getCurrentShift that checks for cross-midnight shifts
+ * Safe wrapper around existing getCurrentShift
+ */
+export const getCurrentShiftWithCrossMidnight = async (filters) => {
+  try {
+    console.log('🌙 Enhanced getCurrentShift with cross-midnight detection');
+    
+    // First, try regular getCurrentShift
+    const regularResult = await getCurrentShift(filters);
+    
+    if (regularResult.success && regularResult.data) {
+      console.log('✅ Found regular shift for requested date');
+      return regularResult;
+    }
+    
+    // If no shift found for current date, check for cross-midnight
+    console.log('🌙 No shift found for current date, checking cross-midnight...');
+    const crossMidnightResult = await detectCrossMidnightShift(
+      filters.employeeId, 
+      filters.date || getCurrentDate()
+    );
+    
+    if (crossMidnightResult.found) {
+      console.log('✅ Using cross-midnight shift');
+      return {
+        success: true,
+        data: crossMidnightResult.shift,
+        message: 'Cross-midnight shift found',
+        _isCrossMidnight: true
+      };
+    }
+    
+    // No shift found at all
+    console.log('🌙 No shift found (regular or cross-midnight)');
+    return { success: true, data: null, message: 'No shift found' };
+    
+  } catch (error) {
+    console.error('❌ Error in enhanced getCurrentShift:', error);
+    return { success: false, message: `Error: ${error.message}` };
+  }
+};
+
+

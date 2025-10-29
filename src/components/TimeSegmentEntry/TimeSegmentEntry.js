@@ -121,12 +121,19 @@ const TimeSegmentEntry = ({ onSubmit, existingSegments = [], loading = false, sh
         return;
       }
 
-      // Check if end time is after start time
+      // Check if end time is after start time (allow cross-midnight shifts)
       const start = new Date(`1970-01-01T${segment.startTime}:00`);
       const end = new Date(`1970-01-01T${segment.endTime}:00`);
       
-      if (end <= start) {
-        newErrors.push(`Segment ${index + 1}: End time must be after start time`);
+      // Calculate duration using the same logic as backend (handles cross-midnight)
+      let diffMs = end - start;
+      if (diffMs < 0) {
+        diffMs += 24 * 60 * 60 * 1000; // Handle overnight shifts by adding 24 hours
+      }
+      const duration = diffMs / (1000 * 60 * 60);
+      
+      if (duration <= 0 || duration >= 24) {
+        newErrors.push(`Segment ${index + 1}: Invalid time range (must be within 24 hours)`);
       }
 
       // REMOVED: Time restrictions for today's segments - now allows any time

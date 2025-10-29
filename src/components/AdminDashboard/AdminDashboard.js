@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
+import { useTheme } from '../../contexts/ThemeContext';
 import { 
   getShifts,
   getStaffList,
@@ -18,7 +19,8 @@ import {
 
 const AdminDashboard = () => {
   const { user, logout } = useAuth();
-  const [activeTab, setActiveTab] = useState('overview');
+  const { isDarkMode, toggleTheme } = useTheme();
+  const [activeTab, setActiveTab] = useState('summary');
   // eslint-disable-next-line no-unused-vars
   const [allShifts, setAllShifts] = useState([]);
   const [allStaff, setAllStaff] = useState([]);
@@ -86,10 +88,21 @@ const AdminDashboard = () => {
   const [statusUpdateLoading, setStatusUpdateLoading] = useState(false);
   const [lastUpdateTime, setLastUpdateTime] = useState(null);
 
+  // Summary tab states
+  const [summaryDateRange, setSummaryDateRange] = useState('month'); // Default to current month
+  const [summaryCustomRange, setSummaryCustomRange] = useState({ start: '', end: '' });
+  const [showDrafts, setShowDrafts] = useState(true); // Match user's screenshot "Show Drafts: Yes"
+  const [employeeStatusFilter, setEmployeeStatusFilter] = useState('all'); // all, active (working), inactive (not working)
+  const [summaryData, setSummaryData] = useState([]);
+  const [summaryLoading, setSummaryLoading] = useState(false);
+  const [calendarData, setCalendarData] = useState({});
+  const [activeEmployees, setActiveEmployees] = useState([]);
+  const [summaryViewType, setSummaryViewType] = useState('calendar'); // calendar, list, cards
+
 
   // Define exact column order and names from Apps Script (excluding Row Index)
-  // 🔥 EXACT GOOGLE SHEETS COLUMN STRUCTURE (15 columns A-O)
-  // Matches createRealTimeHeaders() in appscript.js
+  // 🔥 EXACT GOOGLE SHEETS COLUMN STRUCTURE (16 columns A-P)
+  // Updated to match actual sheet structure with Day column
   const appsScriptColumns = [
     { key: 'Shift ID', label: 'Shift ID' },              // Column A
     { key: 'Employee Name', label: 'Employee Name' },    // Column B
@@ -105,8 +118,338 @@ const AdminDashboard = () => {
     { key: 'Created At', label: 'Created At' },          // Column L
     { key: 'Last Updated', label: 'Last Updated' },      // Column M
     { key: 'Initial Segment Data', label: 'Initial Segment Data' }, // Column N
-    { key: 'Updated', label: 'Updated' }                 // Column O
+    { key: 'Updated', label: 'Updated' },                // Column O
+    { key: 'Day', label: 'Day' }                         // Column P - NEW
   ];
+
+  // Summary Tab Helper Functions
+  const getSummaryDateRange = (period, customRange = summaryCustomRange) => {
+    const today = new Date();
+    const todayStr = today.toISOString().split('T')[0];
+    
+    switch (period) {
+      case 'month':
+        // This Month: From 1st of current month to last day of current month
+        const year = today.getFullYear();
+        const month = today.getMonth();
+        const monthStartStr = `${year}-${String(month + 1).padStart(2, '0')}-01`;
+        const monthEndDate = new Date(year, month + 1, 0);
+        const monthEndStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(monthEndDate.getDate()).padStart(2, '0')}`;
+        return { 
+          start: monthStartStr, 
+          end: monthEndStr 
+        };
+      case 'lastMonth':
+        // Last Month: From 1st of previous month to last day of previous month
+        const lastMonthStart = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+        const lastMonthEnd = new Date(today.getFullYear(), today.getMonth(), 0);
+        return { 
+          start: lastMonthStart.toISOString().split('T')[0], 
+          end: lastMonthEnd.toISOString().split('T')[0] 
+        };
+      case 'week':
+        // This Week: From Sunday to today
+        const weekStart = new Date(today);
+        weekStart.setDate(today.getDate() - today.getDay());
+        return { start: weekStart.toISOString().split('T')[0], end: todayStr };
+      case 'today':
+        // Today only
+        return { start: todayStr, end: todayStr };
+      case 'custom':
+        return customRange;
+      default:
+        return { start: todayStr, end: todayStr };
+    }
+  };
+
+  const processCalendarData = (shifts, staffList, dateRange, includeDrafts = true, statusFilter = 'all') => {
+    const calendar = {};
+    
+    // Filter shifts based on date range and draft status
+    const filteredShifts = shifts.filter(shift => {
+      const shiftDate = shift.shiftDate || shift['Shift Date'];
+      const status = shift.status || shift['Status'];
+      
+      // Convert dates to proper Date objects for comparison
+      let inDateRange = true;
+      if (dateRange.start && dateRange.end && shiftDate) {
+        // Normalize all dates to YYYY-MM-DD format for comparison
+        const normalizeDate = (dateStr) => {
+          if (!dateStr) return '';
+          // Handle different date formats
+          let normalized = dateStr;
+          if (typeof dateStr === 'object' && dateStr.getTime) {
+            normalized = dateStr.toISOString().split('T')[0];
+          } else if (typeof dateStr === 'string') {
+            // If it's already YYYY-MM-DD, keep it
+            if (dateStr.match(/^\d{4}-\d{2}-\d{2}$/)) {
+              normalized = dateStr;
+            } else {
+              // Try to parse and convert to YYYY-MM-DD
+              const parsed = new Date(dateStr);
+              if (!isNaN(parsed.getTime())) {
+                normalized = parsed.toISOString().split('T')[0];
+              }
+            }
+          }
+          return normalized;
+        };
+        
+        const normalizedShiftDate = normalizeDate(shiftDate);
+        const normalizedStartDate = normalizeDate(dateRange.start);
+        const normalizedEndDate = normalizeDate(dateRange.end);
+        
+        inDateRange = normalizedShiftDate >= normalizedStartDate && normalizedShiftDate <= normalizedEndDate;
+        
+        // Debug logging
+        if (!inDateRange) {
+          console.log('📅 Date filter debug:', {
+            originalShiftDate: shiftDate,
+            normalizedShiftDate,
+            normalizedStartDate,
+            normalizedEndDate,
+            inRange: inDateRange
+          });
+        }
+      }
+      
+      const includeShift = includeDrafts || status !== 'DRAFT';
+      
+      return inDateRange && includeShift;
+    });
+    
+    // Determine which employees to show based on their employment status from Staff sheet
+    let employees = [];
+    if (statusFilter === 'all') {
+      employees = staffList.map(s => s.name).sort();
+    } else {
+      // Filter employees by their actual employment status from Staff sheet
+      employees = staffList
+        .filter(employee => {
+          // Check status field - treat empty as 'active' by default
+          const empStatus = (employee.status || '').toLowerCase();
+          const isActive = empStatus === 'active' || empStatus === ''; // Empty status = active
+          const isInactive = empStatus === 'inactive';
+          
+          console.log('🔍 Employee status check:', {
+            name: employee.name,
+            status: employee.status,
+            finalStatus: empStatus || '(empty - treating as active)',
+            isActive,
+            isInactive
+          });
+          
+          if (statusFilter === 'active') {
+            return isActive;
+          } else if (statusFilter === 'inactive') {
+            return isInactive;
+          }
+          return true;
+        })
+        .map(s => s.name)
+        .sort();
+    }
+    
+    // Create date array from start to end
+    const startDate = new Date(dateRange.start);
+    const endDate = new Date(dateRange.end);
+    const dates = [];
+    
+    for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
+      dates.push(new Date(d));
+    }
+    
+    // Initialize calendar grid
+    dates.forEach(date => {
+      const dateKey = date.toISOString().split('T')[0];
+      const dayName = date.toLocaleDateString('en-US', { weekday: 'short' });
+      const dayMonth = date.toLocaleDateString('en-US', { day: 'numeric', month: 'short' });
+      
+      calendar[dateKey] = {
+        date: dateKey,
+        displayDate: `${dayMonth} ${dayName}`,
+        employees: {},
+        dayTotal: 0
+      };
+      
+      // Initialize each employee for this date
+      employees.forEach(empName => {
+        calendar[dateKey].employees[empName] = {
+          hours: 0,
+          shifts: 0,
+          status: 'inactive'
+        };
+      });
+    });
+    
+    // Fill in actual shift data
+    filteredShifts.forEach(shift => {
+      const shiftDate = shift.shiftDate || shift['Shift Date'];
+      const empName = shift.employeeName || shift['Employee Name'];
+      const hours = parseFloat(shift.totalDuration || shift['Total Duration']) || 0;
+      const shiftStatus = shift.status || shift['Status'] || 'DRAFT';
+      
+      if (calendar[shiftDate] && calendar[shiftDate].employees[empName]) {
+        calendar[shiftDate].employees[empName].hours += hours;
+        calendar[shiftDate].employees[empName].shifts += 1;
+        calendar[shiftDate].employees[empName].status = shiftStatus; // Use actual shift status
+        calendar[shiftDate].dayTotal += hours;
+      }
+    });
+    
+    return { calendar, employees, dates };
+  };
+
+  // Function to generate CSV data from calendar
+  const generateCalendarCSV = () => {
+    if (!calendarData.calendar || !calendarData.employees || !calendarData.dates) {
+      return '';
+    }
+
+    const rows = [];
+    
+    // Header row
+    const headers = ['Date', ...calendarData.employees, 'Total'];
+    rows.push(headers.join(','));
+    
+    // Data rows
+    calendarData.dates.forEach(date => {
+      const dateKey = date.toISOString().split('T')[0];
+      const dayData = calendarData.calendar[dateKey];
+      
+      const row = [dayData?.displayDate || dateKey];
+      
+      // Add employee hours for this date
+      calendarData.employees.forEach(empName => {
+        const empData = dayData?.employees?.[empName];
+        const hours = empData?.hours || 0;
+        const status = empData?.status || '';
+        
+        // Format: "12.0h (COMPLETED)" or "0" for no hours
+        if (hours > 0) {
+          row.push(`"${hours.toFixed(1)}h (${status})"`);
+        } else {
+          row.push('0');
+        }
+      });
+      
+      // Add day total
+      row.push(`${(dayData?.dayTotal || 0).toFixed(1)}h`);
+      
+      rows.push(row.join(','));
+    });
+    
+    // Summary row
+    const summaryRow = ['TOTAL'];
+    calendarData.employees.forEach(empName => {
+      const empTotal = calendarData.dates?.reduce((sum, date) => {
+        const dateKey = date.toISOString().split('T')[0];
+        const empData = calendarData.calendar[dateKey]?.employees?.[empName];
+        return sum + (empData?.hours || 0);
+      }, 0) || 0;
+      summaryRow.push(`${empTotal.toFixed(1)}h`);
+    });
+    
+    // Grand total
+    const grandTotal = calendarData.dates?.reduce((sum, date) => {
+      const dateKey = date.toISOString().split('T')[0];
+      return sum + (calendarData.calendar[dateKey]?.dayTotal || 0);
+    }, 0) || 0;
+    summaryRow.push(`${grandTotal.toFixed(1)}h`);
+    
+    rows.push(summaryRow.join(','));
+    
+    return rows.join('\n');
+  };
+
+  // Function to download CSV file
+  const downloadCalendarCSV = () => {
+    const csvContent = generateCalendarCSV();
+    if (!csvContent) {
+      alert('No calendar data to export. Please load summary data first.');
+      return;
+    }
+    
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    
+    if (link.download !== undefined) {
+      const url = URL.createObjectURL(blob);
+      link.setAttribute('href', url);
+      
+      // Generate filename with date range
+      const startDate = summaryDateRange === 'custom' ? summaryCustomRange.start : 
+                       getSummaryDateRange(summaryDateRange).start;
+      const endDate = summaryDateRange === 'custom' ? summaryCustomRange.end : 
+                     getSummaryDateRange(summaryDateRange).end;
+      
+      const filename = `calendar-summary-${startDate}-to-${endDate}.csv`;
+      link.setAttribute('download', filename);
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+  };
+
+  const handleLoadSummaryData = async () => {
+    setSummaryLoading(true);
+    try {
+      const dateRange = getSummaryDateRange(summaryDateRange, summaryCustomRange);
+      console.log('🗓️ Summary date range:', dateRange);
+      console.log('📊 Selected period:', summaryDateRange);
+      
+      // Load shifts and staff data from both sheets
+      console.log('📡 Fetching data from sheets...');
+      const [shiftsResponse, staffResponse] = await Promise.all([
+        getShifts({
+          startDate: dateRange.start,
+          endDate: dateRange.end
+        }),
+        getStaffList()
+      ]);
+      
+      console.log('📊 Shifts response:', shiftsResponse);
+      console.log('👥 Staff response:', staffResponse);
+      
+      // Debug first few shifts to see date format
+      if (shiftsResponse.success && shiftsResponse.data.length > 0) {
+        console.log('🔍 Sample shift data (first 3):');
+        shiftsResponse.data.slice(0, 3).forEach((shift, i) => {
+          console.log(`  Shift ${i + 1}:`, {
+            'shiftDate': shift.shiftDate,
+            'employeeName': shift.employeeName,
+            'totalDuration': shift.totalDuration,
+            'status': shift.status
+          });
+        });
+      }
+      
+      if (shiftsResponse.success && staffResponse.success) {
+        setSummaryData(shiftsResponse.data);
+        
+        // Process into calendar format
+        const { calendar, employees, dates } = processCalendarData(
+          shiftsResponse.data, 
+          staffResponse.data, 
+          dateRange, 
+          showDrafts,
+          employeeStatusFilter
+        );
+        
+        setCalendarData({ calendar, employees, dates, dateRange });
+        setActiveEmployees(employees);
+        
+        setMessage(`Summary loaded: ${shiftsResponse.data.length} shifts for ${employees.length} employees`);
+      } else {
+        setMessage('Failed to load summary data');
+      }
+    } catch (error) {
+      setMessage(handleAPIError(error));
+    } finally {
+      setSummaryLoading(false);
+    }
+  };
 
   // Helper function to calculate duration from time strings (HH:MM format)
   const calculateDurationFromTimes = (startTime, endTime) => {
@@ -564,38 +907,38 @@ const AdminDashboard = () => {
   const viewTypes = [
     { 
       value: 'essential', 
-      label: 'Essential View (7 cols)',
-      columns: ['Shift ID', 'Employee Name', 'Shift Date', 'First Start Time', 'Last End Time', 'Total Duration', 'Status']
+      label: 'Essential View (8 cols)',
+      columns: ['Shift ID', 'Employee Name', 'Shift Date', 'First Start Time', 'Last End Time', 'Total Duration', 'Status', 'Day']
     },
     { 
       value: 'management', 
-      label: 'Management View (9 cols)',
-      columns: ['Shift ID', 'Employee Name', 'Employee ID', 'Shift Date', 'Shift Type', 'First Start Time', 'Last End Time', 'Total Duration', 'Status']
+      label: 'Management View (10 cols)',
+      columns: ['Shift ID', 'Employee Name', 'Employee ID', 'Shift Date', 'Shift Type', 'First Start Time', 'Last End Time', 'Total Duration', 'Status', 'Day']
     },
     { 
       value: 'complete', 
-      label: 'Complete View (All 15 cols)',
+      label: 'Complete View (All 16 cols)',
       columns: appsScriptColumns.map(col => col.key)
     },
     { 
       value: 'timetracking', 
-      label: 'Time Tracking (8 cols)',
-      columns: ['Shift ID', 'Employee Name', 'Shift Date', 'First Start Time', 'Last End Time', 'Total Duration', 'Number of Segments', 'Status']
+      label: 'Time Tracking (9 cols)',
+      columns: ['Shift ID', 'Employee Name', 'Shift Date', 'First Start Time', 'Last End Time', 'Total Duration', 'Number of Segments', 'Status', 'Day']
     },
     { 
       value: 'audit', 
-      label: 'Audit Trail (10 cols)',
-      columns: ['Shift ID', 'Employee Name', 'Employee ID', 'Shift Date', 'Status', 'Created At', 'Last Updated', 'Initial Segment Data', 'Segments Data', 'Updated']
+      label: 'Audit Trail (11 cols)',
+      columns: ['Shift ID', 'Employee Name', 'Employee ID', 'Shift Date', 'Status', 'Created At', 'Last Updated', 'Initial Segment Data', 'Segments Data', 'Updated', 'Day']
     },
     { 
       value: 'quick', 
-      label: 'Quick Summary (5 cols)',
-      columns: ['Employee Name', 'Shift Date', 'Total Duration', 'Number of Segments', 'Status']
+      label: 'Quick Summary (6 cols)',
+      columns: ['Employee Name', 'Shift Date', 'Total Duration', 'Number of Segments', 'Status', 'Day']
     }
     ,
     {
       value: 'updatescheck',
-      label: 'Updates Check View (7 cols)',
+      label: 'Updates Check View (8 cols)',
       columns: [
         'Shift ID',
         'Employee Name',
@@ -603,7 +946,8 @@ const AdminDashboard = () => {
         'Segments Data',
         'Initial Segment Data',
         'Status',
-        'Updated'
+        'Updated',
+        'Day'
       ]
     }
   ];
@@ -1595,16 +1939,21 @@ const AdminDashboard = () => {
       case 'week':
         const weekStart = new Date(today);
         weekStart.setDate(today.getDate() - today.getDay());
-        return { start: weekStart.toISOString().split('T')[0], end: todayStr };
+        const weekEnd = new Date(weekStart);
+        weekEnd.setDate(weekStart.getDate() + 6); // Include full week (Sun-Sat)
+        return { start: weekStart.toISOString().split('T')[0], end: weekEnd.toISOString().split('T')[0] };
       case 'month':
         const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
-        return { start: monthStart.toISOString().split('T')[0], end: todayStr };
+        const monthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0); // Last day of current month
+        return { start: monthStart.toISOString().split('T')[0], end: monthEnd.toISOString().split('T')[0] };
       case 'quarter':
         const quarterStart = new Date(today.getFullYear(), Math.floor(today.getMonth() / 3) * 3, 1);
-        return { start: quarterStart.toISOString().split('T')[0], end: todayStr };
+        const quarterEnd = new Date(today.getFullYear(), Math.floor(today.getMonth() / 3) * 3 + 3, 0);
+        return { start: quarterStart.toISOString().split('T')[0], end: quarterEnd.toISOString().split('T')[0] };
       case 'year':
         const yearStart = new Date(today.getFullYear(), 0, 1);
-        return { start: yearStart.toISOString().split('T')[0], end: todayStr };
+        const yearEnd = new Date(today.getFullYear(), 11, 31);
+        return { start: yearStart.toISOString().split('T')[0], end: yearEnd.toISOString().split('T')[0] };
       case 'last7days':
         const last7 = new Date(today);
         last7.setDate(today.getDate() - 6);
@@ -2285,6 +2634,15 @@ const AdminDashboard = () => {
     try {
       const dateRange = getDateRangeForPeriod(selectedTimePeriod);
       
+      console.log('🔍 === ADMIN OVERVIEW DEBUG ===');
+      console.log('Selected time period:', selectedTimePeriod);
+      console.log('Date range calculated:', dateRange);
+      console.log('Date range start:', dateRange.start);
+      console.log('Date range end:', dateRange.end);
+      console.log('Today is:', new Date().toISOString().split('T')[0]);
+      console.log('Your data has dates: 2025-10-22, 2025-10-13');
+      console.log('===============================');
+      
       const response = await makeAPICall({
         action: 'getAllShiftsForAdmin',
         startDate: dateRange.start,
@@ -2531,6 +2889,12 @@ const AdminDashboard = () => {
               Overview
             </button>
             <button 
+              className={`btn btn-sm me-2 ${activeTab === 'summary' ? 'btn-light' : 'btn-outline-light'}`}
+              onClick={() => setActiveTab('summary')}
+            >
+              Summary
+            </button>
+            <button 
               className={`btn btn-sm me-2 ${activeTab === 'staff' ? 'btn-light' : 'btn-outline-light'}`}
               onClick={() => setActiveTab('staff')}
             >
@@ -2539,6 +2903,17 @@ const AdminDashboard = () => {
           </div>
           
           <div className="navbar-nav ms-auto d-flex flex-row align-items-center">
+            <button
+              className="theme-toggle me-2"
+              onClick={toggleTheme}
+              title={isDarkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+            >
+              {isDarkMode ? (
+                <span style={{ fontSize: '1rem' }}>☀️</span>
+              ) : (
+                <span style={{ fontSize: '1rem' }}>🌙</span>
+              )}
+            </button>
             <span className="navbar-text me-3 d-none d-md-inline">
               Welcome, <strong>{user?.name?.split(' ')[0] || 'Admin'}</strong>
             </span>
@@ -2705,7 +3080,10 @@ const AdminDashboard = () => {
                       <div className="col-12">
                         <label className="form-label small fw-bold">Filter by Columns:</label>
                         <div className="row g-2">
-                          {getOrderedOverviewColumns().map(colKey => {
+                          {(selectedView === 'complete' 
+                            ? ['Shift ID', 'Employee Name', 'Day', 'Updated', 'Status', 'Number of Segments', 'Shift Type', 'Employee ID'] 
+                            : getOrderedOverviewColumns()
+                          ).map(colKey => {
                             const column = appsScriptColumns.find(col => col.key === colKey);
                             return (
                               <div key={colKey} className="col-6 col-md-3">
@@ -3275,6 +3653,302 @@ const AdminDashboard = () => {
                   </div>
                 )}
               </>
+            )}
+          </div>
+        )}
+
+        {/* Summary Tab */}
+        {activeTab === 'summary' && (
+          <div className="row g-3 g-md-4">
+            <div className="col-12">
+              <h2 className="h4 mb-3">📊 Employee Summary Calendar</h2>
+            </div>
+            
+            {/* Summary Controls */}
+            <div className="col-12">
+              <div className="card">
+                <div className="card-header">
+                  <h5 className="card-title mb-0">⚙️ Summary Controls</h5>
+                </div>
+                <div className="card-body">
+                  <div className="row g-3 align-items-end">
+                    {/* Date Range Selection */}
+                    <div className="col-12 col-md-3">
+                      <label className="form-label small">Date Range:</label>
+                      <select 
+                        className="form-select"
+                        value={summaryDateRange}
+                        onChange={(e) => setSummaryDateRange(e.target.value)}
+                      >
+                        <option value="today">Today</option>
+                        <option value="week">This Week</option>
+                        <option value="month">This Month</option>
+                        <option value="lastMonth">Last Month</option>
+                        <option value="custom">Custom Range</option>
+                      </select>
+                    </div>
+                    
+                    {/* Custom Date Range */}
+                    {summaryDateRange === 'custom' && (
+                      <>
+                        <div className="col-6 col-md-2">
+                          <label className="form-label small">Start Date:</label>
+                          <input 
+                            type="date" 
+                            className="form-control"
+                            value={summaryCustomRange.start}
+                            onChange={(e) => setSummaryCustomRange(prev => ({ ...prev, start: e.target.value }))}
+                          />
+                        </div>
+                        <div className="col-6 col-md-2">
+                          <label className="form-label small">End Date:</label>
+                          <input 
+                            type="date" 
+                            className="form-control"
+                            value={summaryCustomRange.end}
+                            onChange={(e) => setSummaryCustomRange(prev => ({ ...prev, end: e.target.value }))}
+                          />
+                        </div>
+                      </>
+                    )}
+                    
+                    {/* Show Drafts Toggle - Matching user's screenshot */}
+                    <div className="col-12 col-md-2">
+                      <label className="form-label small">Show Drafts:</label>
+                      <select 
+                        className="form-select"
+                        value={showDrafts ? 'Yes' : 'No'}
+                        onChange={(e) => setShowDrafts(e.target.value === 'Yes')}
+                      >
+                        <option value="Yes">Yes</option>
+                        <option value="No">No</option>
+                      </select>
+                    </div>
+                    
+                    {/* Employee Status Filter */}
+                    <div className="col-12 col-md-2">
+                      <label className="form-label small">Employee Status:</label>
+                      <select 
+                        className="form-select"
+                        value={employeeStatusFilter}
+                        onChange={(e) => setEmployeeStatusFilter(e.target.value)}
+                      >
+                        <option value="all">All Employees</option>
+                        <option value="active">Active Only</option>
+                        <option value="inactive">Inactive Only</option>
+                      </select>
+                    </div>
+                    
+                    {/* Action buttons */}
+                    <div className="col-12 col-md-3">
+                      <div className="d-flex gap-2">
+                        <button 
+                          className="btn btn-primary flex-fill"
+                          onClick={handleLoadSummaryData}
+                          disabled={summaryLoading || (summaryDateRange === 'custom' && (!summaryCustomRange.start || !summaryCustomRange.end))}
+                        >
+                          {summaryLoading ? (
+                            <span className="spinner-border spinner-border-sm me-2" />
+                          ) : (
+                            <i className="bi bi-calendar3 me-2"></i>
+                          )}
+                          Load
+                        </button>
+                        
+                        <button 
+                          className="btn btn-outline-success"
+                          onClick={downloadCalendarCSV}
+                          disabled={!calendarData.calendar}
+                          title="Download calendar as CSV file"
+                        >
+                          <i className="bi bi-download"></i>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Calendar View - Matching user's screenshot layout */}
+            {calendarData.calendar && (
+              <div className="col-12">
+                <div className="card">
+                  <div className="card-header d-flex justify-content-between align-items-center">
+                    <h6 className="card-title mb-0">📅 Calendar Summary</h6>
+                    <small className="text-muted">
+                      {calendarData.employees?.length || 0} employees • {calendarData.dates?.length || 0} days
+                    </small>
+                  </div>
+                  <div className="card-body">
+                    <div className="table-responsive">
+                      <table className="table table-bordered table-sm mb-0" style={{fontSize: '0.8rem'}}>
+                        <thead className="table-light">
+                          <tr>
+                            <th className="text-center" style={{minWidth: '120px'}}>Date</th>
+                            {calendarData.employees?.map(empName => (
+                              <th key={empName} className="text-center" style={{minWidth: '80px'}}>
+                                {empName}
+                              </th>
+                            ))}
+                            <th className="text-center bg-info text-white" style={{minWidth: '80px'}}>Total</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {calendarData.dates?.map(date => {
+                            const dateKey = date.toISOString().split('T')[0];
+                            const dayData = calendarData.calendar[dateKey];
+                            
+                            return (
+                              <tr key={dateKey}>
+                                <td className="text-center fw-bold">
+                                  {dayData?.displayDate || dateKey}
+                                </td>
+                                {calendarData.employees?.map(empName => {
+                                  const empData = dayData?.employees?.[empName];
+                                  const hours = empData?.hours || 0;
+                                  const status = empData?.status || 'DRAFT';
+                                  
+                                  // Determine badge color based on shift status
+                                  let badgeClass = 'badge ';
+                                  if (status === 'DRAFT') {
+                                    badgeClass += 'bg-secondary'; // Grey for drafts
+                                  } else if (status === 'ACTIVE' || status === 'ON BREAK') {
+                                    badgeClass += 'bg-success'; // Green for active
+                                  } else if (status === 'COMPLETED') {
+                                    badgeClass += 'bg-primary'; // Blue for completed
+                                  } else {
+                                    badgeClass += 'bg-secondary'; // Default grey
+                                  }
+                                  
+                                  return (
+                                    <td key={empName} className="text-center">
+                                      {hours > 0 ? (
+                                        <span className={badgeClass} title={`Status: ${status}`}>
+                                          {hours.toFixed(1)}h
+                                        </span>
+                                      ) : (
+                                        <span className="text-muted">-</span>
+                                      )}
+                                    </td>
+                                  );
+                                })}
+                                <td className="text-center bg-light">
+                                  {dayData?.dayTotal > 0 ? (
+                                    <strong className="text-primary">
+                                      {dayData.dayTotal.toFixed(1)}h
+                                    </strong>
+                                  ) : (
+                                    <span className="text-muted">-</span>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                          
+                          {/* Total Row */}
+                          <tr className="table-warning">
+                            <td className="text-center fw-bold">Total</td>
+                            {calendarData.employees?.map(empName => {
+                              const empTotal = calendarData.dates?.reduce((sum, date) => {
+                                const dateKey = date.toISOString().split('T')[0];
+                                const empData = calendarData.calendar[dateKey]?.employees?.[empName];
+                                return sum + (empData?.hours || 0);
+                              }, 0) || 0;
+                              
+                              return (
+                                <td key={empName} className="text-center fw-bold">
+                                  {empTotal > 0 ? (
+                                    <span className="text-primary">
+                                      {empTotal.toFixed(1)}h
+                                    </span>
+                                  ) : (
+                                    <span className="text-muted">0h</span>
+                                  )}
+                                </td>
+                              );
+                            })}
+                            <td className="text-center fw-bold bg-info text-white">
+                              {calendarData.dates?.reduce((sum, date) => {
+                                const dateKey = date.toISOString().split('T')[0];
+                                return sum + (calendarData.calendar[dateKey]?.dayTotal || 0);
+                              }, 0).toFixed(1) || '0.0'}h
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                    
+                    {/* Summary Stats */}
+                    <div className="row mt-3">
+                      <div className="col-md-3">
+                        <div className="text-center">
+                          <h6 className="text-muted mb-1">Total Hours</h6>
+                          <h4 className="text-primary mb-0">
+                            {calendarData.dates?.reduce((sum, date) => {
+                              const dateKey = date.toISOString().split('T')[0];
+                              return sum + (calendarData.calendar[dateKey]?.dayTotal || 0);
+                            }, 0).toFixed(1) || '0.0'}h
+                          </h4>
+                        </div>
+                      </div>
+                      <div className="col-md-3">
+                        <div className="text-center">
+                          <h6 className="text-muted mb-1">Active Days</h6>
+                          <h4 className="text-success mb-0">
+                            {calendarData.dates?.filter(date => {
+                              const dateKey = date.toISOString().split('T')[0];
+                              return (calendarData.calendar[dateKey]?.dayTotal || 0) > 0;
+                            }).length || 0}
+                          </h4>
+                        </div>
+                      </div>
+                      <div className="col-md-3">
+                        <div className="text-center">
+                          <h6 className="text-muted mb-1">Employees</h6>
+                          <h4 className="text-info mb-0">
+                            {calendarData.employees?.length || 0}
+                          </h4>
+                        </div>
+                      </div>
+                      <div className="col-md-3">
+                        <div className="text-center">
+                          <h6 className="text-muted mb-1">Avg per Day</h6>
+                          <h4 className="text-warning mb-0">
+                            {calendarData.dates?.length > 0 ? (
+                              (calendarData.dates.reduce((sum, date) => {
+                                const dateKey = date.toISOString().split('T')[0];
+                                return sum + (calendarData.calendar[dateKey]?.dayTotal || 0);
+                              }, 0) / calendarData.dates.length).toFixed(1)
+                            ) : '0.0'}h
+                          </h4>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+            
+            {/* No Data Message */}
+            {!summaryLoading && !calendarData.calendar && (
+              <div className="col-12">
+                <div className="card">
+                  <div className="card-body text-center py-5">
+                    <i className="bi bi-calendar-x display-1 text-muted mb-3"></i>
+                    <h5 className="text-muted mb-2">No Summary Data</h5>
+                    <p className="text-muted mb-3">Select a date range and click "Load Summary" to view the calendar.</p>
+                    <button 
+                      className="btn btn-outline-primary"
+                      onClick={handleLoadSummaryData}
+                      disabled={summaryLoading}
+                    >
+                      <i className="bi bi-calendar3 me-2"></i>
+                      Load Current Month
+                    </button>
+                  </div>
+                </div>
+              </div>
             )}
           </div>
         )}

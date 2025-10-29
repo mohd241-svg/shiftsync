@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
+import { useTheme } from '../../contexts/ThemeContext';
 import ShiftEntry from '../ShiftEntry/ShiftEntry';
 import ShiftHistory from '../ShiftHistory/ShiftHistory';
 import { autoStatusUpdateOnLoad, manualStatusUpdate, handleAPIError } from '../../services/appScriptAPI';
 
 const StaffDashboard = () => {
   const { user, logout } = useAuth();
+  const { isDarkMode, toggleTheme } = useTheme();
   const [activeTab, setActiveTab] = useState('shift-entry');
   const [statusUpdateLoading, setStatusUpdateLoading] = useState(false);
   const [lastUpdateTime, setLastUpdateTime] = useState(null);
@@ -152,6 +154,17 @@ const StaffDashboard = () => {
             </div>
             
             <div className="navbar-nav">
+              <button
+                className="theme-toggle me-2"
+                onClick={toggleTheme}
+                title={isDarkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+              >
+                {isDarkMode ? (
+                  <span style={{ fontSize: '1rem' }}>☀️</span>
+                ) : (
+                  <span style={{ fontSize: '1rem' }}>🌙</span>
+                )}
+              </button>
               <span className="navbar-text me-2 d-none d-md-inline">
                 Welcome, <strong>{user?.name?.split(' ')[0] || 'User'}</strong>
               </span>

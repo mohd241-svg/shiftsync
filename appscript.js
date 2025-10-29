@@ -19,7 +19,68 @@ function getRealTimeShiftsFullData() {
 const SPREADSHEET_ID = '13ToeBKYEtJoTa8VcZijDI6563I22whZFYAkkQsyxdwA';
 const SHIFTS_SHEET_NAME = 'RealTimeShifts';
 const STAFF_SHEET_NAME = 'Staff';
-const DEFAULT_TIMEZONE = 'America/New_York'; // Change this to your default timezone
+const DEFAULT_TIMEZONE = 'Europe/London'; // Change this to your default timezone
+
+// =============================================================
+//               DAY COLUMN UTILITIES
+// =============================================================
+
+/**
+ * Get day name from date string
+ */
+function getDayName(dateString) {
+  try {
+    // Handle both YYYY-MM-DD and DD/MM/YYYY formats
+    let date;
+    if (dateString.includes('/')) {
+      // DD/MM/YYYY format
+      const [day, month, year] = dateString.split('/');
+      date = new Date(year, month - 1, day);
+    } else {
+      // YYYY-MM-DD format
+      date = new Date(dateString + 'T00:00:00');
+    }
+    
+    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    return days[date.getDay()];
+  } catch (error) {
+    Logger.log(`❌ Error getting day name for ${dateString}: ${error}`);
+    return '';
+  }
+}
+
+/**
+ * Test Day column implementation
+ */
+function testDayColumnImplementation() {
+  try {
+    Logger.log('=== TESTING DAY COLUMN IMPLEMENTATION ===');
+    
+    // Test getDayName function
+    const testDate = '2025-01-20';
+    const dayName = getDayName(testDate);
+    Logger.log(`📅 Day name for ${testDate}: ${dayName}`);
+    
+    // Test various date formats
+    const testDates = [
+      '2025-01-20', // Monday
+      '2025-01-21', // Tuesday  
+      '20/01/2025', // DD/MM/YYYY format
+      '21/01/2025'
+    ];
+    
+    testDates.forEach(date => {
+      const day = getDayName(date);
+      Logger.log(`📅 ${date} = ${day}`);
+    });
+    
+    Logger.log('✅ Day column implementation test completed');
+    return { success: true, message: 'Day column implementation working correctly' };
+  } catch (error) {
+    Logger.log('❌ Error testing Day column: ' + error.toString());
+    return { success: false, message: 'Day column test failed: ' + error.toString() };
+  }
+}
 
 // =============================================================
 //               CLIENT-SIDE STATUS MANAGEMENT
@@ -295,36 +356,36 @@ function testTimeComparisonWithRealData() {
     // Test with real shift data
     let realShiftTests = [];
     realShiftData.forEach(shift => {
-      if (shift.segments && shift.segments.length > 0) {
-        shift.segments.forEach(segment => {
-          if (segment.endTime) {
-            // Test time comparison for real segment end times
-            const serverComparison = isEnhancedTimeAfter(serverTime, segment.endTime);
-            const userComparison = isEnhancedTimeAfter(userTime, segment.endTime);
+        if (shift.segments && shift.segments.length > 0) {
+          shift.segments.forEach(segment => {
+            if (segment.endTime) {
+              // Test time comparison for real segment end times
+              const serverComparison = isEnhancedTimeAfter(serverTime, segment.endTime);
+              const userComparison = isEnhancedTimeAfter(userTime, segment.endTime);
             
-            // Test what the smart status would be
-            const serverSmartStatus = calculateEnhancedSmartStatus(shift.segments, serverTime, shift.lastEndTime, shift.status);
-            const userSmartStatus = calculateEnhancedSmartStatus(shift.segments, userTime, shift.lastEndTime, shift.status);
+              // Test what the smart status would be
+              const serverSmartStatus = calculateEnhancedSmartStatus(shift.segments, serverTime, shift.lastEndTime, shift.status, shift.shiftDate);
+              const userSmartStatus = calculateEnhancedSmartStatus(shift.segments, userTime, shift.lastEndTime, shift.status, shift.shiftDate);
             
-            realShiftTests.push({
-              shiftId: shift.shiftId,
-              segmentEndTime: segment.endTime,
-              currentStatus: shift.status,
-              serverTimeAfter: serverComparison,
-              userTimeAfter: userComparison,
-              serverSmartStatus: serverSmartStatus,
-              userSmartStatus: userSmartStatus,
-              statusMatch: serverSmartStatus === userSmartStatus,
-              timeComparisonMatch: serverComparison === userComparison
-            });
+              realShiftTests.push({
+                shiftId: shift.shiftId,
+                segmentEndTime: segment.endTime,
+                currentStatus: shift.status,
+                serverTimeAfter: serverComparison,
+                userTimeAfter: userComparison,
+                serverSmartStatus: serverSmartStatus,
+                userSmartStatus: userSmartStatus,
+                statusMatch: serverSmartStatus === userSmartStatus,
+                timeComparisonMatch: serverComparison === userComparison
+              });
             
-            Logger.log(`🔍 Real Shift ${shift.shiftId} - Segment ending ${segment.endTime}:`);
-            Logger.log(`  - Server time after: ${serverComparison}, Smart status: ${serverSmartStatus}`);
-            Logger.log(`  - User time after: ${userComparison}, Smart status: ${userSmartStatus}`);
-            Logger.log(`  - Status match: ${serverSmartStatus === userSmartStatus}`);
-          }
-        });
-      }
+              Logger.log(`🔍 Real Shift ${shift.shiftId} - Segment ending ${segment.endTime}:`);
+              Logger.log(`  - Server time after: ${serverComparison}, Smart status: ${serverSmartStatus}`);
+              Logger.log(`  - User time after: ${userComparison}, Smart status: ${userSmartStatus}`);
+              Logger.log(`  - Status match: ${serverSmartStatus === userSmartStatus}`);
+            }
+          });
+        }
     });
     
     // Test with time variations around current time
@@ -780,6 +841,9 @@ function doPost(e) {
         break;
       case 'debugSheetStructure':
         response = debugSheetStructure();
+        break;
+      case 'debugSheetConnection':
+        response = debugSheetConnection();
         break;
       case 'addStaff':
         response = addStaff(data);
@@ -1731,7 +1795,7 @@ function getShiftsDirectlyFromSheet(data, clientTimezone) {
     }
 
     // Force fresh read from sheet
-    const allData = sheet.getRange(2, 1, lastRow - 1, 13).getValues();
+    const allData = sheet.getRange(2, 1, lastRow - 1, 16).getValues(); // Read all 16 columns including Day
     const matchingShifts = [];
 
     // Filter shifts based on criteria
@@ -1773,7 +1837,8 @@ function getShiftsDirectlyFromSheet(data, clientTimezone) {
           lastUpdated: row[12],
           timezone: clientTimezone,
           _freshFromSheet: true,
-          _rowIndex: i + 2
+          _rowIndex: i + 2,
+          day: row[15] || '' // Day column at position 16 (index 15)
         };
         
         matchingShifts.push(shiftData);
@@ -2359,6 +2424,10 @@ function createCompleteShift(data, clientTimezone) {
         
         Logger.log(`🆕 New Shift - Employee Edit Flag: ${isEmployeeEdit}, Updated Flag will be: ${updatedFlag}`);
         
+        // Calculate day name for the shift date
+        const dayName = getDayName(shiftDate);
+        Logger.log(`📅 Day name for ${shiftDate}: ${dayName}`);
+        
         Logger.log(`🚨 CREATING NEW SHIFT - Status will be: ${smartStatus}`);
         const rowData = [
           shiftId,
@@ -2375,14 +2444,16 @@ function createCompleteShift(data, clientTimezone) {
           new Date(),
           new Date(),
           initialSegmentData,
-          updatedFlag // Use the calculated updated flag
+          updatedFlag, // Use the calculated updated flag
+          dayName // Add Day column at position 16
         ];
         Logger.log(`🚨 NEW SHIFT ROW DATA - Position 10 (Status): ${rowData[10]}`);
         Logger.log(`🚨 NEW SHIFT ROW DATA - firstStartTime: ${rowData[5]}, lastEndTime: ${rowData[6]}, totalDuration: ${rowData[7]}`);
         Logger.log(`🚨 NEW SHIFT ROW DATA - Updated Flag: ${rowData[14]}`);
+        Logger.log(`📅 NEW SHIFT ROW DATA - Day: ${rowData[15]}`);
         
         const nextRow = sheet.getLastRow() + 1;
-        sheet.getRange(nextRow, 1, 1, 15).setValues([rowData]);
+        sheet.getRange(nextRow, 1, 1, 16).setValues([rowData]);
         formatShiftRow(sheet, nextRow);
         
         Logger.log(`✅ New shift created with SMART status: ${smartStatus}`);
@@ -2403,7 +2474,8 @@ function createCompleteShift(data, clientTimezone) {
             status: smartStatus, // 🔥 RETURN SMART STATUS
             scheduleStatus: scheduleStatus,
             initialSegmentData: initialSegmentData,
-            updated: false
+            updated: false,
+            day: dayName // Include Day column in response
           }
         };
       }
@@ -2455,7 +2527,7 @@ function getShifts(data, clientTimezone) {
     const sheet = spreadsheet.getSheetByName(SHIFTS_SHEET_NAME);
     if (!sheet || sheet.getLastRow() <= 1) { return { success: true, data: [], message: 'No shifts found' }; }
     
-    const allData = sheet.getRange(2, 1, sheet.getLastRow() - 1, 13).getValues();
+    const allData = sheet.getRange(2, 1, sheet.getLastRow() - 1, 16).getValues(); // Read all 16 columns including Day
     let filteredData = allData;
     
     if (data && data.employeeId) { 
@@ -2574,7 +2646,8 @@ function getShifts(data, clientTimezone) {
         status: smartStatus, // 🔥 SMART STATUS FOR HISTORY TOO
         createdAt: row[11], 
         lastUpdated: row[12],
-        timezone: clientTimezone
+        timezone: clientTimezone,
+        day: row[15] || '' // Day column at position 16 (index 15)
       };
     });
     
@@ -2600,9 +2673,27 @@ function getStaffList() {
     }
     const lastRow = staffSheet.getLastRow();
     if (lastRow <= 1) { return { success: true, data: [], message: 'No staff found' }; }
-    const allData = staffSheet.getRange(2, 1, lastRow - 1, 5).getValues();
-    const staff = allData.map(row => ({ staffId: row[0], name: row[1], email: row[2], role: row[3], department: row[4] }));
-    return { success: true, data: staff, count: staff.length };
+    const allData = staffSheet.getRange(2, 1, lastRow - 1, 7).getValues();
+    
+    // Debug logging to see what we're actually reading
+    Logger.log('🔍 Staff Sheet Debug - First row data:', allData[0]);
+    Logger.log('🔍 Status column (index 6) values:', allData.map(row => row[6]));
+    
+    const staff = allData.map(row => ({ 
+      staffId: row[0], 
+      name: row[1], 
+      email: row[2], 
+      role: row[3], 
+      department: row[4],
+      timezone: row[5],
+      status: row[6] // Status is in column G (index 6)
+    }));
+    return { 
+      success: true, 
+      data: staff, 
+      count: staff.length,
+      message: `${staff.length} staff members found`
+    };
   } catch (error) {
     Logger.log('Error getting staff list: ' + error.toString());
     return { success: false, message: 'Failed to get staff list: ' + error.toString() };
@@ -2689,7 +2780,7 @@ function handleExistingShift(sheet, row, data, currentTime, clientTimezone) {
     const rowData = sheet.getRange(row, 1, 1, 13).getValues()[0];
     const status = rowData[10];
     const employeeId = rowData[2];
-    const shiftDate = rowData[3];
+    const shiftDate = normalizeDate(rowData[3]);
     
     if (status === 'COMPLETED') { return { success: false, message: 'Shift already completed for today' }; }
     if (status === 'ACTIVE') { 
@@ -2700,12 +2791,22 @@ function handleExistingShift(sheet, row, data, currentTime, clientTimezone) {
       }; 
     }
     
+    // 🚨 CRITICAL FIX: Check if shift date is in the future
+    const today = normalizeDate(new Date());
+    let newStatus = 'ACTIVE';
+    
+    if (shiftDate > today) {
+      // Future dates should always be DRAFT
+      newStatus = 'DRAFT';
+      Logger.log(`🚨 Future date detected: ${shiftDate} > ${today} - setting status to DRAFT`);
+    }
+    
     let segments = JSON.parse(rowData[9] || '[]');
     segments.push({ segmentId: segments.length + 1, startTime: currentTime, endTime: null, duration: null });
     
     sheet.getRange(row, 9).setValue(segments.length);
     sheet.getRange(row, 10).setValue(JSON.stringify(segments));
-    sheet.getRange(row, 11).setValue('ACTIVE');
+    sheet.getRange(row, 11).setValue(newStatus);
     sheet.getRange(row, 13).setValue(new Date());
     
     formatShiftRow(sheet, row);
@@ -2714,7 +2815,7 @@ function handleExistingShift(sheet, row, data, currentTime, clientTimezone) {
       shiftId: rowData[0], 
       employeeName: rowData[1], 
       employeeId: employeeId, 
-      shiftDate: normalizeDate(shiftDate), 
+      shiftDate: shiftDate, 
       shiftType: rowData[4], 
       segments: segments.map(seg => ({
         ...seg,
@@ -2722,8 +2823,8 @@ function handleExistingShift(sheet, row, data, currentTime, clientTimezone) {
         endTimeFormatted: seg.endTime ? formatTimeForClient(seg.endTime, clientTimezone) : null
       })), 
       totalDuration: rowData[7], 
-      isActive: true, 
-      status: 'ACTIVE',
+      isActive: newStatus === 'ACTIVE', 
+      status: newStatus,
       timezone: clientTimezone
     };
     
@@ -2765,13 +2866,27 @@ function createBrandNewShift(sheet, data, employeeId, employeeName, shiftDate, c
   const segments = [{ segmentId: 1, startTime: currentTime, endTime: null, duration: null }];
   const shiftType = data.shiftType || 'Regular';
   
+  // 🚨 CRITICAL FIX: Check if shift date is in the future
+  const today = normalizeDate(new Date());
+  let initialStatus = 'ACTIVE';
+  
+  if (shiftDate > today) {
+    // Future dates should always be DRAFT
+    initialStatus = 'DRAFT';
+    Logger.log(`🚨 Future date detected: ${shiftDate} > ${today} - setting initial status to DRAFT`);
+  }
+  
+  // Calculate day name for the shift date
+  const dayName = getDayName(shiftDate);
+  Logger.log(`📅 Day name for ${shiftDate}: ${dayName}`);
+  
   const rowData = [ 
     shiftId, employeeName, employeeId, shiftDate, shiftType, currentTime, null, 0, 1, 
-    JSON.stringify(segments), 'ACTIVE', new Date(), new Date() 
+    JSON.stringify(segments), initialStatus, new Date(), new Date(), '', '', dayName 
   ];
   
   const nextRow = sheet.getLastRow() + 1;
-  sheet.getRange(nextRow, 1, 1, 13).setValues([rowData]);
+  sheet.getRange(nextRow, 1, 1, 16).setValues([rowData]);
   formatShiftRow(sheet, nextRow);
   
   Logger.log('NEW SHIFT CREATED in row: ' + nextRow);
@@ -2788,9 +2903,10 @@ function createBrandNewShift(sheet, data, employeeId, employeeName, shiftDate, c
       endTimeFormatted: seg.endTime ? formatTimeForClient(seg.endTime, clientTimezone) : null
     })), 
     totalDuration: 0, 
-    isActive: true, 
-    status: 'ACTIVE',
-    timezone: clientTimezone
+    isActive: initialStatus === 'ACTIVE', 
+    status: initialStatus,
+    timezone: clientTimezone,
+    day: dayName
   };
   
   return {
@@ -6488,10 +6604,17 @@ function updateAllShiftStatusesToSmart() {
       const hasActiveSegment = segments.some(seg => !seg.endTime);
       const lastEndTime = row[6];
       const storedStatus = row[10];
+      const shiftDate = normalizeDate(row[3]); // Get shift date
       
-      // Calculate smart status
+      // 🚨 CRITICAL FIX: Check if shift date is in the future
+      const today = normalizeDate(new Date());
       let smartStatus;
-      if (storedStatus === 'COMPLETED') {
+      
+      if (shiftDate > today) {
+        // Future dates should always be DRAFT
+        smartStatus = 'DRAFT';
+        Logger.log(`Future date detected for row ${rowNumber}: ${shiftDate} > ${today} - setting to DRAFT`);
+      } else if (storedStatus === 'COMPLETED') {
         smartStatus = 'COMPLETED'; // Keep manually completed
       } else if (hasActiveSegment) {
         smartStatus = 'ACTIVE';
@@ -7021,13 +7144,14 @@ function updateShiftStatus(shiftId, clientTimezone) {
     const rowData = sheet.getRange(targetRow, 1, 1, 13).getValues()[0];
     const segments = JSON.parse(rowData[9] || '[]');
     const currentStatus = rowData[10];
+    const shiftDate = normalizeDate(rowData[3]); // Get the shift date
     
     // Get current time in client's timezone
     const currentTime = getCurrentTimeString(clientTimezone);
     Logger.log(`Current time in client timezone: ${currentTime}`);
     
-    // Calculate what the status should be
-    let newStatus = calculateSmartStatus(segments, currentTime);
+    // Calculate what the status should be (passing shift date for future date check)
+    let newStatus = calculateSmartStatus(segments, currentTime, shiftDate);
 
     Logger.log(`Current status: ${currentStatus}, Calculated status: ${newStatus}`);
 
@@ -7101,9 +7225,20 @@ function updateShiftStatus(shiftId, clientTimezone) {
 /**
  * Calculates what a shift's status should be based on current time and segments
  */
-function calculateSmartStatus(segments, currentTime) {
+function calculateSmartStatus(segments, currentTime, shiftDate) {
   try {
-    Logger.log(`� Calculating smart status at ${currentTime}`);
+    Logger.log(`🔍 Calculating smart status at ${currentTime} for date ${shiftDate || 'unknown'}`);
+    
+    // 🚨 CRITICAL FIX: Check if shift date is in the future
+    if (shiftDate) {
+      const today = normalizeDate(new Date());
+      Logger.log(`Date comparison: Today=${today}, ShiftDate=${shiftDate}`);
+      
+      if (shiftDate > today) {
+        Logger.log('🚨 FUTURE DATE DETECTED - Forcing DRAFT status');
+        return 'DRAFT';
+      }
+    }
     
     if (!segments || segments.length === 0) {
       Logger.log('No segments found - DRAFT');
@@ -7187,7 +7322,7 @@ function testSmartStatusLogic() {
   // Run tests
   testCases.forEach(test => {
     Logger.log(`\nTesting: ${test.name}`);
-    const result = calculateSmartStatus(test.segments, test.currentTime);
+    const result = calculateSmartStatus(test.segments, test.currentTime, null); // No date for tests
     Logger.log(`Expected: ${test.expectedStatus}, Got: ${result}`);
     if (result === test.expectedStatus) {
       Logger.log('✅ Test passed');
@@ -7238,7 +7373,7 @@ function testStatusCalculation() {
   
   Logger.log('\n2️⃣ Testing calculateSmartStatus function:');
   testTimes.forEach(time => {
-    const result = calculateSmartStatus(realShiftData.segments, time);
+    const result = calculateSmartStatus(realShiftData.segments, time, null); // No date for test
     Logger.log(`Time ${time}: Status = ${result}`);
   });
   
@@ -7284,10 +7419,11 @@ function testStatusCalculation() {
     
     // Calculate what the status should be
     const segments = JSON.parse(allData[targetRow - 2][9]);
+    const shiftDate = normalizeDate(allData[targetRow - 2][3]); // Get shift date for testing
     const shouldBeCompleted = isCurrentTimeAfterShiftEnd(currentTime, endTime);
     Logger.log(`Should be completed? ${shouldBeCompleted}`);
     
-    const smartStatus = calculateSmartStatus(segments, currentTime);
+    const smartStatus = calculateSmartStatus(segments, currentTime, shiftDate);
     Logger.log(`Smart status calculation says: ${smartStatus}`);
   }
   
@@ -7595,39 +7731,48 @@ function isTimeMoreThanMinutesAfter(currentTime, endTime, minutes) {
  * ENHANCED: Smart status calculation specifically for auto-updates
  * Handles edge cases and provides more aggressive completion detection
  */
-function calculateEnhancedSmartStatus(segments, currentTime, lastEndTime, currentStatus) {
+function calculateEnhancedSmartStatus(segments, currentTime, lastEndTime, currentStatus, shiftDateArg) {
   try {
     Logger.log(`🚀 Enhanced smart status calculation:`);
     Logger.log(`- Current time: ${currentTime}`);
     Logger.log(`- Current status: ${currentStatus}`);
     Logger.log(`- Segments: ${segments.length}`);
-    
+
+    // PATCH: Always return DRAFT for future dates using actual shiftDate
+    // Compare only the date part (YYYY-MM-DD) for future date logic
+    let shiftDateStr = shiftDateArg ? String(shiftDateArg).slice(0, 10) : null;
+    let todayStr = new Date().toISOString().slice(0, 10);
+    if (shiftDateStr && shiftDateStr > todayStr) {
+      Logger.log('Future date detected - force DRAFT');
+      return 'DRAFT';
+    }
+
     if (!segments || segments.length === 0) {
       Logger.log('No segments - DRAFT');
       return 'DRAFT';
     }
 
-    // � NEVER AUTO-COMPLETE: Only check for ACTIVE status
+    // Only check for ACTIVE status
     const hasActiveSegment = segments.some(seg => !seg.endTime);
-    
+
     Logger.log(`Has active segment: ${hasActiveSegment}`);
-    
+
     // If there's an active segment, status should be ACTIVE
     if (hasActiveSegment) {
       Logger.log('✅ Active segment detected - ACTIVE');
       return 'ACTIVE';
     }
-    
+
     // If no active segments but we have segments, keep current status (no auto-completion)
     if (segments.length > 0) {
       Logger.log('⚠️ No active segments - keeping current status (no auto-completion)');
       return currentStatus === 'COMPLETED' ? 'COMPLETED' : 'ACTIVE';
     }
-    
+
     // Fall back to regular smart status for edge cases
-    const regularStatus = calculateSmartStatus(segments, currentTime);
+    const regularStatus = calculateSmartStatus(segments, currentTime, null); // No date check for fallback
     Logger.log(`🔄 Falling back to regular status: ${regularStatus}`);
-    
+
     return regularStatus;
     
   } catch (error) {
@@ -7912,6 +8057,83 @@ function getSystemStats() {
 }
 
 /**
+ * Debug function to check what's actually in the Google Sheets
+ */
+function debugSheetConnection() {
+  try {
+    Logger.log('🔍 === DEBUGGING GOOGLE SHEETS CONNECTION ===');
+    Logger.log('Spreadsheet ID:', SPREADSHEET_ID);
+    Logger.log('Shifts Sheet Name:', SHIFTS_SHEET_NAME);
+    
+    const spreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
+    Logger.log('✅ Spreadsheet opened successfully');
+    Logger.log('Spreadsheet name:', spreadsheet.getName());
+    
+    // List all sheet names
+    const sheets = spreadsheet.getSheets();
+    Logger.log('📋 Available sheets:');
+    sheets.forEach((sheet, index) => {
+      Logger.log(`  ${index + 1}. "${sheet.getName()}" (${sheet.getLastRow()} rows, ${sheet.getLastColumn()} cols)`);
+    });
+    
+    // Try to access the RealTimeShifts sheet
+    const shiftsSheet = spreadsheet.getSheetByName(SHIFTS_SHEET_NAME);
+    if (!shiftsSheet) {
+      Logger.log('❌ RealTimeShifts sheet NOT FOUND!');
+      return {
+        success: false,
+        message: `Sheet "${SHIFTS_SHEET_NAME}" not found`,
+        availableSheets: sheets.map(s => s.getName())
+      };
+    }
+    
+    Logger.log('✅ RealTimeShifts sheet found');
+    Logger.log('Last row:', shiftsSheet.getLastRow());
+    Logger.log('Last column:', shiftsSheet.getLastColumn());
+    
+    if (shiftsSheet.getLastRow() <= 1) {
+      Logger.log('⚠️ Sheet appears to be empty (only header row or less)');
+      return {
+        success: true,
+        message: 'Sheet found but appears empty',
+        lastRow: shiftsSheet.getLastRow(),
+        lastColumn: shiftsSheet.getLastColumn()
+      };
+    }
+    
+    // Get headers
+    const headers = shiftsSheet.getRange(1, 1, 1, shiftsSheet.getLastColumn()).getValues()[0];
+    Logger.log('📋 Headers:', headers);
+    
+    // Get first few data rows
+    const dataRowCount = Math.min(5, shiftsSheet.getLastRow() - 1);
+    if (dataRowCount > 0) {
+      const sampleData = shiftsSheet.getRange(2, 1, dataRowCount, shiftsSheet.getLastColumn()).getValues();
+      Logger.log('📊 Sample data (first', dataRowCount, 'rows):');
+      sampleData.forEach((row, index) => {
+        Logger.log(`  Row ${index + 2}:`, row);
+      });
+    }
+    
+    return {
+      success: true,
+      message: `Found ${shiftsSheet.getLastRow() - 1} data rows`,
+      headers: headers,
+      lastRow: shiftsSheet.getLastRow(),
+      lastColumn: shiftsSheet.getLastColumn(),
+      availableSheets: sheets.map(s => s.getName())
+    };
+    
+  } catch (error) {
+    Logger.log('❌ Error debugging sheet connection:', error.toString());
+    return {
+      success: false,
+      message: 'Error accessing spreadsheet: ' + error.toString()
+    };
+  }
+}
+
+/**
  * Get all shifts data for admin dashboard with advanced filtering
  */
 function getAllShiftsForAdmin(payload) {
@@ -7920,10 +8142,17 @@ function getAllShiftsForAdmin(payload) {
     
     const { startDate, endDate, searchTerm, status } = payload || {};
     
+    Logger.log('📅 Date filters requested:');
+    Logger.log('  Start Date:', startDate);
+    Logger.log('  End Date:', endDate);
+    Logger.log('  Search Term:', searchTerm);
+    Logger.log('  Status Filter:', status);
+    
     const spreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
     const shiftsSheet = spreadsheet.getSheetByName(SHIFTS_SHEET_NAME);
     
     if (!shiftsSheet || shiftsSheet.getLastRow() <= 1) {
+      Logger.log('❌ No shifts sheet found or no data rows');
       return {
         success: true,
         data: [],
@@ -7934,9 +8163,20 @@ function getAllShiftsForAdmin(payload) {
     // Get the actual headers from the sheet
     const headers = shiftsSheet.getRange(1, 1, 1, shiftsSheet.getLastColumn()).getValues()[0];
     Logger.log('📋 Sheet headers:', headers);
+    Logger.log('📊 Total rows in sheet:', shiftsSheet.getLastRow());
+    Logger.log('📊 Total columns in sheet:', shiftsSheet.getLastColumn());
     
     // Get all data rows
     const allData = shiftsSheet.getRange(2, 1, shiftsSheet.getLastRow() - 1, headers.length).getValues();
+    Logger.log('📊 Raw data rows retrieved:', allData.length);
+    
+    // Log first few rows for debugging
+    if (allData.length > 0) {
+      Logger.log('🔍 First 3 rows of data:');
+      for (let i = 0; i < Math.min(3, allData.length); i++) {
+        Logger.log(`  Row ${i + 1}:`, allData[i]);
+      }
+    }
     
     // Map each row to an object using the actual sheet headers as keys
     let filteredShifts = allData.map((row, index) => {
@@ -7969,24 +8209,58 @@ function getAllShiftsForAdmin(payload) {
       });
       return shiftObject;
     });
+    
+    Logger.log('📊 Before filtering - total mapped shifts:', filteredShifts.length);
+    
+    // Log some sample dates from the data for debugging
+    if (filteredShifts.length > 0) {
+      Logger.log('🗓️ Sample shift dates from data:');
+      for (let i = 0; i < Math.min(5, filteredShifts.length); i++) {
+        Logger.log(`  Shift ${i + 1} date:`, filteredShifts[i]['Shift Date']);
+      }
+    }
 
     // Apply filters
+    Logger.log('🔍 Applying date filters...');
+    const beforeDateFilter = filteredShifts.length;
+    
     if (startDate) {
-      filteredShifts = filteredShifts.filter(shift => shift['Shift Date'] >= startDate);
+      const normalizedStartDate = normalizeDate(startDate);
+      Logger.log('📅 Filtering by start date:', startDate, '-> Normalized:', normalizedStartDate);
+      filteredShifts = filteredShifts.filter(shift => {
+        const shiftDate = normalizeDate(shift['Shift Date']);
+        return shiftDate && shiftDate >= normalizedStartDate;
+      });
+      Logger.log('📊 After start date filter:', filteredShifts.length);
     }
     if (endDate) {
-      filteredShifts = filteredShifts.filter(shift => shift['Shift Date'] <= endDate);
+      const normalizedEndDate = normalizeDate(endDate);
+      Logger.log('📅 Filtering by end date:', endDate, '-> Normalized:', normalizedEndDate);
+      filteredShifts = filteredShifts.filter(shift => {
+        const shiftDate = normalizeDate(shift['Shift Date']);
+        return shiftDate && shiftDate <= normalizedEndDate;
+      });
+      Logger.log('📊 After end date filter:', filteredShifts.length);
     }
+    
+    Logger.log(`🎯 Date filtering result: ${beforeDateFilter} → ${filteredShifts.length}`);
+    
     if (searchTerm) {
+      Logger.log('🔍 Applying search term filter:', searchTerm);
       filteredShifts = filteredShifts.filter(shift =>
         Object.values(shift).some(val =>
           val && val.toString().toLowerCase().includes(searchTerm.toLowerCase())
         )
       );
+      Logger.log('📊 After search filter:', filteredShifts.length);
     }
     if (status && status !== 'All Statuses') {
+      Logger.log('🔍 Applying status filter:', status);
       filteredShifts = filteredShifts.filter(shift => shift['Status'] === status);
+      Logger.log('📊 After status filter:', filteredShifts.length);
     }
+    
+    Logger.log('🎉 Final result:', filteredShifts.length, 'shifts found');
 
     return {
       success: true,
@@ -8075,6 +8349,104 @@ function updateShiftStatus(payload) {
     return {
       success: false,
       message: 'Error updating shift status: ' + error.toString()
+    };
+  }
+}
+
+/**
+ * Fix shift status inconsistencies (used by frontend smart status logic)
+ */
+function fixShiftStatus(payload) {
+  try {
+    Logger.log('🔧 === FIXING SHIFT STATUS INCONSISTENCY ===');
+    const { shiftId, correctStatus, reason } = payload;
+    
+    if (!shiftId || !correctStatus) {
+      return {
+        success: false,
+        message: 'Missing shiftId or correctStatus for fixShiftStatus'
+      };
+    }
+    
+    const spreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const sheet = spreadsheet.getSheetByName(SHIFTS_SHEET_NAME);
+    
+    if (!sheet) {
+      return {
+        success: false,
+        message: 'Shifts sheet not found'
+      };
+    }
+    
+    // Find the shift by ID
+    const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, sheet.getLastColumn()).getValues();
+    const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    const statusColumnIndex = headers.indexOf('Status');
+    const lastUpdatedColumnIndex = headers.indexOf('Last Updated');
+    const shiftDateColumnIndex = headers.indexOf('Shift Date');
+    
+    if (statusColumnIndex === -1) {
+      return {
+        success: false,
+        message: 'Status column not found'
+      };
+    }
+    
+    for (let i = 0; i < data.length; i++) {
+      if (data[i][0] === shiftId) { // Shift ID is in first column
+        const rowNumber = i + 2; // Convert to 1-based row number
+        const oldStatus = data[i][statusColumnIndex];
+        const shiftDate = data[i][shiftDateColumnIndex];
+        
+        // Only fix if status actually needs correction
+        if (oldStatus === correctStatus) {
+          Logger.log(`ℹ️ Shift ${shiftId} status already correct: ${correctStatus}`);
+          return {
+            success: true,
+            message: `Status already correct: ${correctStatus}`,
+            data: {
+              shiftId: shiftId,
+              status: correctStatus,
+              changed: false
+            }
+          };
+        }
+        
+        // Update status
+        sheet.getRange(rowNumber, statusColumnIndex + 1).setValue(correctStatus);
+        
+        // Update last updated timestamp if column exists
+        if (lastUpdatedColumnIndex !== -1) {
+          sheet.getRange(rowNumber, lastUpdatedColumnIndex + 1).setValue(new Date());
+        }
+        
+        Logger.log(`🔧 FIXED shift ${shiftId} (${shiftDate}): ${oldStatus} → ${correctStatus} (${reason || 'Smart status correction'})`);
+        
+        return {
+          success: true,
+          message: `Status fixed: ${oldStatus} → ${correctStatus}`,
+          data: {
+            shiftId: shiftId,
+            shiftDate: shiftDate,
+            oldStatus: oldStatus,
+            newStatus: correctStatus,
+            reason: reason,
+            changed: true
+          }
+        };
+      }
+    }
+    
+    return {
+      success: false,
+      message: `Shift with ID ${shiftId} not found for status fix`
+    };
+    
+  } catch (error) {
+    Logger.log(`❌ Error fixing shift status: ${error}`);
+    return {
+      success: false,
+      message: 'Error fixing shift status: ' + error.toString()
     };
   }
 }
